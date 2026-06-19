@@ -1,0 +1,147 @@
+/**
+ * Custom CSS — loaded after style.css & components.css
+ * Uses !important only where Bootstrap/Popper inline styles must be beaten.
+ */
+
+/* =========================================================
+   SIDEBAR DROPDOWNS — full-sidebar expand-inline fix
+   style.css sets position:static but Bootstrap/Popper can
+   override it with inline style="position:absolute;transform:..."
+   !important beats those inline styles.
+   ========================================================= */
+
+body:not(.sidebar-mini) .main-sidebar .sidebar-menu li .dropdown-menu {
+    position: static !important;
+    float: none !important;
+    transform: none !important;
+    will-change: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    z-index: auto !important;
+}
+
+/* =========================================================
+   SIDEBAR DROPDOWNS — mini mode flyout (hover)
+   Restore absolute flyout only in sidebar-mini
+   ========================================================= */
+
+body.sidebar-mini .main-sidebar .sidebar-menu > li > .dropdown-menu {
+    position: absolute !important;
+    left: 65px !important;
+    top: 10px !important;
+    width: 210px !important;
+    min-width: 210px !important;
+    background-color: #fff !important;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.13) !important;
+    border: 1px solid #f0f0f0 !important;
+    border-radius: 6px !important;
+    padding: 4px 0 !important;
+    z-index: 1060 !important;
+    transform: none !important;
+}
+
+body.sidebar-mini .main-sidebar .sidebar-menu > li:hover > .dropdown-menu {
+    display: block !important;
+}
+
+/* =========================================================
+   ACTIVE MENU — stronger visual highlight
+   ========================================================= */
+
+/* Full sidebar active item */
+body:not(.sidebar-mini) .main-sidebar .sidebar-menu > li.active > a,
+body:not(.sidebar-mini) .main-sidebar .sidebar-menu > li.active > a:hover {
+    background-color: #2a6d98 !important;
+    color: #fff !important;
+    border-radius: 4px !important;
+    box-shadow: 0 4px 10px rgba(42, 109, 152, 0.35) !important;
+}
+
+body:not(.sidebar-mini) .main-sidebar .sidebar-menu > li.active > a i,
+body:not(.sidebar-mini) .main-sidebar .sidebar-menu > li.active > a span {
+    color: #fff !important;
+}
+
+/* Active nested dropdown item */
+.main-sidebar .sidebar-menu .dropdown-menu li.active > a {
+    color: #2a6d98 !important;
+    font-weight: 700 !important;
+    background-color: #e8f2f8 !important;
+}
+
+/* Mini sidebar active item (already styled by Stisla, just reinforce) */
+body.sidebar-mini .main-sidebar .sidebar-menu > li.active > a {
+    background-color: #2a6d98 !important;
+    box-shadow: 0 4px 8px rgba(42, 109, 152, 0.4) !important;
+}
+
+/* =========================================================
+   MOBILE SIDEBAR — auto-hide + overlay slide-in
+   .main-sidebar is position:fixed in style.css.
+   On mobile we force left:-250px by default.
+   When sidebar-show is added (hamburger click), it slides in.
+   ========================================================= */
+
+@media (max-width: 1024px) {
+    /* Force hidden on mobile regardless of body class state */
+    .main-sidebar {
+        left: -250px !important;
+        transition: left 0.3s ease !important;
+        z-index: 1050 !important;
+    }
+
+    /* Show when hamburger clicked (scripts.js adds sidebar-show) */
+    body.sidebar-show .main-sidebar {
+        left: 0 !important;
+    }
+
+    /* Dark overlay behind sidebar when open */
+    body.sidebar-show::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 1049;
+    }
+
+    /* Remove the left padding that reserves space for sidebar */
+    .main-content {
+        padding-left: 15px !important;
+    }
+}
+
+/* =========================================================
+   NAVBAR TITLE (VIMS-Suite)
+   ========================================================= */
+
+.vsuite-navbar-title {
+    font-family: 'Montserrat', 'Poppins', Arial, sans-serif;
+    font-weight: 700;
+    font-size: 1.3rem;
+    color: #1a73e8;
+    letter-spacing: 1.5px;
+    display: inline-flex !important;
+    align-items: center;
+    vertical-align: middle;
+    text-shadow: 0 2px 8px rgba(26, 115, 232, 0.25);
+    white-space: nowrap;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+@media (max-width: 576px) {
+    .vsuite-navbar-title {
+        font-size: 1rem;
+        letter-spacing: 1px;
+    }
+}
+
+/*# sourceMappingURL=custom.css.map */

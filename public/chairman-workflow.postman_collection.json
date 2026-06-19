@@ -1,0 +1,228 @@
+{
+  "info": {
+    "name": "V-Suite — Chairman Approval Workflow",
+    "description": "Complete API workflow for Chairman document approval. Run requests in order: Step 1 → 2 → 3 → 4.\n\nBase URL variable: Set {{base_url}} to your V-Suite domain (e.g. http://localhost/v-suite or https://yourdomain.com).\n\nThe token from Step 1 is auto-saved to {{chairman_token}} via the test script.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",       "value": "http://localhost/v-suite",   "type": "string" },
+    { "key": "chairman_token", "value": "",                           "type": "string" },
+    { "key": "doc_id",         "value": "1",                         "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "STEP 1 — Authenticate Chairman (Cross-VSuite)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const json = pm.response.json();",
+              "    if (json.success && json.data && json.data.token) {",
+              "        pm.collectionVariables.set('chairman_token', json.data.token);",
+              "        pm.test('Token received and saved', () => pm.expect(json.data.token).to.be.a('string'));",
+              "    }",
+              "}",
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Success true', () => pm.expect(pm.response.json().success).to.be.true);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept",       "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"pa.chairman@hospital.com\",\n  \"source_app\": \"VSuite-Branch\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/cross-auth/chairman",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "cross-auth", "chairman"]
+        },
+        "description": "Exchange the Chairman's email for a 30-day Bearer token.\n\nNo auth required — this is the public identity-verification endpoint.\nThe test script automatically saves the token to {{chairman_token}}."
+      }
+    },
+    {
+      "name": "STEP 2 — List Pending Documents (Chairman's queue)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "if (json.data && json.data.length > 0) {",
+              "    const firstId = json.data[0].id;",
+              "    pm.collectionVariables.set('doc_id', String(firstId));",
+              "    pm.test('At least one pending doc — ID saved: ' + firstId, () => pm.expect(firstId).to.be.a('number'));",
+              "} else {",
+              "    pm.test('No pending documents (set {{doc_id}} manually)', () => true);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{chairman_token}}" },
+          { "key": "Accept",        "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/documents/pending",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "documents", "pending"]
+        },
+        "description": "Returns all documents currently forwarded to the Chairman for approval.\nThe test script auto-saves the first document's ID to {{doc_id}}.\n\nOr manually set {{doc_id}} to the document you want to approve."
+      }
+    },
+    {
+      "name": "STEP 3 — View Document Details",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{chairman_token}}" },
+          { "key": "Accept",        "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/documents/{{doc_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "documents", "{{doc_id}}"]
+        },
+        "description": "Fetch full details of the document before approving.\nCheck: title, amount, from, approval_sequence, current_sequence_index, is_payment_involved, is_purchase."
+      }
+    },
+    {
+      "name": "STEP 4a — Chairman Approve (with Finance Head choice)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Success true', () => pm.expect(json.success).to.be.true);",
+              "if (json.data) {",
+              "    pm.test('Document status updated', () => pm.expect(json.data.status).to.exist);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{chairman_token}}" },
+          { "key": "Content-Type",  "value": "application/json" },
+          { "key": "Accept",        "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"remarks\": \"Approved as per committee decision\",\n  \"finance_head\": \"Finance Head Salem\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/documents/{{doc_id}}/chairman-approve",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "documents", "{{doc_id}}", "chairman-approve"]
+        },
+        "description": "Approve the document as Chairman.\n\nFIELDS:\n• remarks       (string, optional) — Approval note logged in approval_log\n• finance_head  (string, optional) — Override which Finance Head receives the payment step\n                 Values: \"Finance Head Salem\" | \"Finance Head Chennai\" | \"Finance Head Karaikal\"\n                 If omitted, the sequence's default Finance Head is used.\n\nWhat happens:\n1. Approval logged in approval_log\n2. Document forwarded to next step (Finance Head or completion)\n3. Status updated to InProgress or Completed"
+      }
+    },
+    {
+      "name": "STEP 4b — Chairman Approve (minimal — no Finance Head override)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{chairman_token}}" },
+          { "key": "Content-Type",  "value": "application/json" },
+          { "key": "Accept",        "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"remarks\": \"Approved\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/documents/{{doc_id}}/chairman-approve",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "documents", "{{doc_id}}", "chairman-approve"]
+        },
+        "description": "Minimal approval — only remarks, no Finance Head override. The sequence's built-in next step will be used."
+      }
+    },
+    {
+      "name": "STEP 5 — View Approval Log (verify action was recorded)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "const log = json.data || json;",
+              "const chairmanEntry = Array.isArray(log) && log.find(e => e.status && e.status.toLowerCase().includes('chairman'));",
+              "pm.test('Chairman approval entry exists in log', () => pm.expect(chairmanEntry).to.be.ok);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{chairman_token}}" },
+          { "key": "Accept",        "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/documents/{{doc_id}}/approval-log",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "documents", "{{doc_id}}", "approval-log"]
+        },
+        "description": "Fetch the full approval trail for the document.\nThe test checks that a 'Chairman' entry was recorded after Step 4."
+      }
+    },
+    {
+      "name": "— EXTRA: List All My Documents (Chairman view)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{chairman_token}}" },
+          { "key": "Accept",        "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/documents/my",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "documents", "my"]
+        },
+        "description": "All documents associated with this Chairman user (created, forwarded, actioned)."
+      }
+    },
+    {
+      "name": "— EXTRA: List Completed Documents",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{chairman_token}}" },
+          { "key": "Accept",        "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/documents/completed",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "documents", "completed"]
+        },
+        "description": "Documents that have completed the full approval flow."
+      }
+    }
+  ]
+}
