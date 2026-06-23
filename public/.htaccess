@@ -1,5 +1,4 @@
-SetEnv APP_ENV local
-SetEnv DB_DATABASE vsuite
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
