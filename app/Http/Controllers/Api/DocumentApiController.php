@@ -7,6 +7,8 @@ use App\Models\DocumentApproval;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class DocumentApiController extends Controller
 {
@@ -50,6 +52,8 @@ class DocumentApiController extends Controller
             'approval_progress_pct'  => count($sequence) > 0 ? round(($currentIndex / count($sequence)) * 100) : 0,
             'created_by'             => optional(User::find($doc->by))->name,
             'created_by_dept'        => optional(User::find($doc->by))->department,
+            'attachment'             => $doc->attachment,
+            'attachment_url'         => $doc->attachment ? url('storage/' . $doc->attachment) : null,
             'created_at'             => $doc->created_at?->toISOString(),
             'updated_at'             => $doc->updated_at?->toISOString(),
         ];
@@ -57,13 +61,17 @@ class DocumentApiController extends Controller
 
     private function logAction(DocumentApproval $doc, string $status, string $description, string $message): void
     {
+        $req = request();
         DB::table('approval_log')->insert([
-            'doc_id'     => $doc->id,
-            'by'         => auth()->id(),
-            'status'     => $status,
-            'message'    => $message,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'doc_id'             => $doc->id,
+            'by'                 => auth()->id(),
+            'status'             => $status,
+            'message'            => $message,
+            'biometric_verified' => (bool) $req->input('biometric_verified', false),
+            'platform'           => $req->input('platform'),
+            'device_info'        => $req->input('device_info'),
+            'created_at'         => now(),
+            'updated_at'         => now(),
         ]);
 
         DB::table('document_logs')->insert([
@@ -714,5 +722,126 @@ class DocumentApiController extends Controller
         $this->logAction($doc, $status, "Document process completed via API by creator <b>{$user->name}</b>.", $request->input('message', 'Process completed'));
 
         return response()->json(['success' => true, 'message' => 'Document process completed.', 'data' => $this->formatDoc($doc->fresh())]);
+    }
+
+    /**
+     * POST /api/v1/documents
+     * Create a new document (Staff / HOD / any authenticated user).
+     * Multipart form-data when attaching a file.
+     *
+     * Body: title, subject, description, to (dept), approval_sequence (JSON array),
+     *       priority?, amount?, is_payment_involved?, file? (attachment)
+     */
+    public function store(Request $request)
+    {
+        $user = $this->apiUser($request);
+
+        $request->validate([
+            'title'              => 'required|string|max:255',
+            'subject'            => 'required|string',
+            'description'        => 'nullable|string',
+            'to'                 => 'required|string|max:255',
+            'approval_sequence'  => 'required|json',
+            'priority'           => 'nullable|in:Low,Normal,High,Urgent',
+            'amount'             => 'nullable|numeric|min:0',
+            'is_payment_involved'=> 'nullable|in:Y,N',
+            'file'               => 'nullable|file|max:10240',
+        ]);
+
+        $attachmentPath = null;
+        if ($request->hasFile('file')) {
+            $year   = date('Y');
+            $month  = date('m');
+            $folder = "uploads/{$year}/{$month}";
+            $name   = Str::uuid() . '.' . $request->file('file')->getClientOriginalExtension();
+            $request->file('file')->storeAs($folder, $name, 'public');
+            $attachmentPath = "{$folder}/{$name}";
+        }
+
+        $sequence = json_decode($request->approval_sequence, true);
+        $docId    = 'DOC-' . strtoupper(Str::random(8));
+
+        $doc = DocumentApproval::create([
+            'doc_id'              => $docId,
+            'by'                  => $user->id,
+            'from'                => $user->department,
+            'to'                  => $request->to,
+            'forwarded_to'        => $sequence[0] ?? $request->to,
+            'title'               => $request->title,
+            'subject'             => $request->subject,
+            'description'         => $request->description ?? '',
+            'status'              => 'Sent to ' . ($sequence[0] ?? $request->to),
+            'approval_status'     => 'Pending',
+            'approval_sequence'   => $request->approval_sequence,
+            'current_sequence_index' => 0,
+            'priority'            => $request->input('priority', 'Normal'),
+            'amount'              => $request->input('amount', 0),
+            'is_payment_involved' => $request->input('is_payment_involved', 'N'),
+            'attachment'          => $attachmentPath,
+        ]);
+
+        $this->logAction($doc, 'Created', "Document created via mobile API by <b>{$user->name}</b> ({$user->department}).", 'Document created');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Document created successfully.',
+            'data'    => $this->formatDoc($doc),
+        ], 201);
+    }
+
+    /**
+     * GET /api/v1/notifications
+     * Notifications for the authenticated user.
+     */
+    public function notifications(Request $request)
+    {
+        $user    = $this->apiUser($request);
+        $perPage = min((int) $request->get('per_page', 20), 50);
+
+        $rows = DB::table('notifications')
+            ->where(function ($q) use ($user) {
+                $q->where('to', $user->id)
+                  ->orWhere('to', $user->department);
+            })
+            ->orderByDesc('created_at')
+            ->paginate($perPage);
+
+        $data = collect($rows->items())->map(function ($n) {
+            $payload = is_string($n->data) ? json_decode($n->data, true) : (array) $n->data;
+            return [
+                'id'         => $n->id,
+                'message'    => $payload['message'] ?? '',
+                'doc_id'     => $payload['doc_id'] ?? null,
+                'is_read'    => (bool) ($n->is_read ?? false),
+                'created_at' => $n->created_at,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+            'meta'    => [
+                'current_page' => $rows->currentPage(),
+                'last_page'    => $rows->lastPage(),
+                'total'        => $rows->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * PUT /api/v1/notifications/{id}/read
+     * Mark a notification as read.
+     */
+    public function markNotificationRead(Request $request, int $id)
+    {
+        $user = $this->apiUser($request);
+        DB::table('notifications')
+            ->where('id', $id)
+            ->where(function ($q) use ($user) {
+                $q->where('to', $user->id)->orWhere('to', $user->department);
+            })
+            ->update(['is_read' => true]);
+
+        return response()->json(['success' => true, 'message' => 'Notification marked as read.']);
     }
 }
