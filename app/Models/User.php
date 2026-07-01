@@ -29,6 +29,7 @@ class User extends Authenticatable
         'phone',
         'password',
         'is_active',
+        'can_use_api',
     ];
 
     /**

@@ -141,6 +141,7 @@ Route::middleware(['auth', 'hod'])->group(function (){
     Route::get('/admin/delete/staff/{id}', [HODController::class, 'deleteStaff'])->name('delete-staff');
     Route::get('/admin/recover/staff/{id}', [HODController::class, 'recoverStaff'])->name('recover-staff');
     Route::get('/admin/change/account/status/{id}', [HODController::class, 'changeAccountStatus'])->name('change-account-status');
+    Route::get('/admin/toggle/api/access/{id}', [HODController::class, 'toggleApiAccess'])->name('toggle-api-access');
 
     /* Dept Master */
 
@@ -217,6 +218,7 @@ Route::middleware(['auth', 'admin'])->group(function (){
     Route::get('/superadmin/delete/staff/{id}', [AdminController::class, 'deleteStaff'])->name('super-admin-delete-staff');
     Route::get('/superadmin/recover/staff/{id}', [AdminController::class, 'recoverStaff'])->name('super-admin-recover-staff');
     Route::get('/superadmin/change/account/status/{id}', [AdminController::class, 'changeAccountStatus'])->name('super-admin-change-account-status');
+    Route::get('/superadmin/toggle/api/access/{id}', [AdminController::class, 'toggleApiAccess'])->name('super-admin-toggle-api-access');
 
     /* Report */
 

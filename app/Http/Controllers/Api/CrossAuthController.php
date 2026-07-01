@@ -46,10 +46,11 @@ class CrossAuthController extends Controller
         $tokenName  = 'Cross-VSuite:' . ($request->input('source_app', 'External')) . '-Chairman';
 
         $apiToken = ApiToken::create([
-            'user_id'    => $user->id,
-            'name'       => $tokenName,
-            'token'      => hash('sha256', $plainToken),
-            'expires_at' => now()->addDays(30),
+            'user_id'       => $user->id,
+            'name'          => $tokenName,
+            'token'         => hash('sha256', $plainToken),
+            'password_hash' => $user->password,   // token is invalidated if v-suite password changes
+            'expires_at'    => now()->addDays(30),
         ]);
 
         return response()->json([

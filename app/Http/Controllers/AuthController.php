@@ -32,6 +32,8 @@ class AuthController extends Controller
                         return redirect()->intended(route('staff_dashboard'))->with($notification);
                     case 'SuperAdmin':
                         return redirect()->intended(route('super_admin_dashboard'))->with($notification);
+                    case 'ITAdmin':
+                        return redirect()->intended(route('itadmin_dashboard'))->with($notification);
                     default:
                         Auth::logout();
                         $notification = [

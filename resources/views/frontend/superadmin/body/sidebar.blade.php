@@ -9,7 +9,11 @@
       <ul class="sidebar-menu">
         <li class="menu-header" style="margin-top: 15px;">Dashboard</li>
         <li class="{{ $activeMenu == 'dashboard' ? 'active' : '' }}">
-          <a href="{{ route('super_admin_dashboard') }}" class="nav-link"><i class="fas fa-fire"></i><span>Dashboard</span></a>
+          @if(Auth::user()->role === 'ITAdmin')
+            <a href="{{ route('itadmin_dashboard') }}" class="nav-link"><i class="fas fa-fire"></i><span>Dashboard</span></a>
+          @else
+            <a href="{{ route('super_admin_dashboard') }}" class="nav-link"><i class="fas fa-fire"></i><span>Dashboard</span></a>
+          @endif
         </li>
         <li class="menu-header">Approval/Requests</li>
             <li class="dropdown {{ $activeMenu == 'document' ? 'active' : '' }}">

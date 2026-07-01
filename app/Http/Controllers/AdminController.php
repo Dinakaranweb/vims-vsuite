@@ -1624,7 +1624,7 @@ class AdminController extends Controller
             return redirect()->back()->with($alert);
 
         }else{
-            
+
             User::findOrFail($id)->update(['is_active' => true]);
 
             $alert = array(
@@ -1633,9 +1633,23 @@ class AdminController extends Controller
             );
 
             return redirect()->back()->with($alert);
-        
+
         }
 
+    }
+
+    public function toggleApiAccess($id){
+
+        $user = User::findOrFail($id);
+
+        $user->update(['can_use_api' => !$user->can_use_api]);
+
+        $alert = array(
+            'message' => $user->can_use_api ? 'API access enabled.' : 'API access disabled.',
+            'alert-type' => 'success'
+        );
+
+        return redirect()->back()->with($alert);
     }
 
     public function deptPosts(){

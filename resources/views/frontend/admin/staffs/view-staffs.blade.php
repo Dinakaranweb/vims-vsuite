@@ -41,6 +41,7 @@
                                     <th>Phone</th>
                                     <th>Email</th>
                                     <th>Designation</th>
+                                    <th>API Access</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -59,6 +60,13 @@
                                         <td>{{ $emp->phone }}</td>
                                         <td>{{ $emp->email }}</td>
                                         <td>{{ $emp->designation }}</td>
+                                        <td>
+                                            @if($emp->can_use_api)
+                                            <a href="{{ route('toggle-api-access', ['id' => $emp->id]) }}" class="btn btn-sm btn-success" data-toggle="tooltip" title="API Enabled — click to disable"><i class="fas fa-mobile-alt"></i> Enabled</a>
+                                            @else
+                                            <a href="{{ route('toggle-api-access', ['id' => $emp->id]) }}" class="btn btn-sm btn-secondary" data-toggle="tooltip" title="API Disabled — click to enable"><i class="fas fa-mobile-alt"></i> Disabled</a>
+                                            @endif
+                                        </td>
                                         <td>
                                             @if($emp->is_active)
                                             <a href="{{ route('change-account-status', ['id' => $emp->id]) }}" class="btn btn-icon btn-primary mr-1" data-toggle="tooltip" title="Active"><i class="far fa-user"></i></a>

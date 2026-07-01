@@ -13,6 +13,23 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
+        // ==================== IT Admin (manages VSuite instances & mobile API) ==
+        User::updateOrCreate(
+            ['email' => 'itadmin@vmu.edu.in'],
+            [
+                'name'        => 'IT Admin',
+                'username'    => 'itadmin',
+                'emp_id'      => 'ICT-001',
+                'designation' => 'IT Administrator',
+                'department'  => 'ICT',
+                'division'    => 'Non Clinical',
+                'role'        => 'itadmin',
+                'phone'       => '0000000000',
+                'password'    => Hash::make('Itadmin@123'),
+                'is_active'   => 1,
+            ]
+        );
+
         // ==================== HOD Users (Document Creators) ====================
         
         // Clinical Department HODs

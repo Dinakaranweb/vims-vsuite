@@ -18,11 +18,14 @@ class AuthApiController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'email'    => 'required|email',
+            'email'    => 'required|string',
             'password' => 'required|string',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        $login = trim($request->email);
+        $user  = User::where('email', $login)
+                      ->orWhere('username', $login)
+                      ->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json(['success' => false, 'message' => 'Invalid credentials.'], 401);
@@ -32,14 +35,19 @@ class AuthApiController extends Controller
             return response()->json(['success' => false, 'message' => 'Your account is inactive.'], 403);
         }
 
+        if (!$user->can_use_api) {
+            return response()->json(['success' => false, 'message' => 'API access is not enabled for your account. Please contact your administrator.'], 403);
+        }
+
         // Generate a plain token — we store its hash
         $plainToken = Str::random(40);
 
         $apiToken = ApiToken::create([
-            'user_id'    => $user->id,
-            'name'       => $request->input('token_name', 'API Access'),
-            'token'      => hash('sha256', $plainToken),
-            'expires_at' => now()->addDays(30),
+            'user_id'       => $user->id,
+            'name'          => $request->input('token_name', 'API Access'),
+            'token'         => hash('sha256', $plainToken),
+            'password_hash' => $user->password,   // invalidated automatically if password changes
+            'expires_at'    => now()->addDays(30),
         ]);
 
         return response()->json([

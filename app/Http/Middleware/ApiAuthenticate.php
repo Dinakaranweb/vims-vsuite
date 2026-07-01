@@ -30,6 +30,12 @@ class ApiAuthenticate
             return response()->json(['success' => false, 'message' => 'User account is inactive.'], 403);
         }
 
+        // If a password snapshot was stored, invalidate the token when password changes
+        if ($apiToken->password_hash !== null && $apiToken->password_hash !== $apiToken->user->password) {
+            $apiToken->delete();
+            return response()->json(['success' => false, 'message' => 'Password has changed. Please log in again.'], 401);
+        }
+
         $apiToken->update(['last_used_at' => now()]);
 
         $request->merge(['_api_user' => $apiToken->user, '_api_token' => $apiToken]);

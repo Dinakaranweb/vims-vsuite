@@ -39,8 +39,9 @@ Route::prefix('v1')->group(function () {
         Route::post('/auth/logout', [AuthApiController::class, 'logout']);
         Route::get('/auth/me',      [AuthApiController::class, 'me']);
 
-        // Documents — listing
+        // Documents — listing + create
         Route::get('/documents',           [DocumentApiController::class, 'index']);
+        Route::post('/documents',          [DocumentApiController::class, 'store']);
         Route::get('/documents/pending',   [DocumentApiController::class, 'pending']);
         Route::get('/documents/my',        [DocumentApiController::class, 'my']);
         Route::get('/documents/completed', [DocumentApiController::class, 'completed']);
@@ -58,5 +59,9 @@ Route::prefix('v1')->group(function () {
         Route::post('/documents/{id}/forward',  [DocumentApiController::class, 'forward']);
         Route::post('/documents/{id}/comment',  [DocumentApiController::class, 'comment']);
         Route::post('/documents/{id}/complete', [DocumentApiController::class, 'complete']);
+
+        // Notifications
+        Route::get('/notifications',              [DocumentApiController::class, 'notifications']);
+        Route::put('/notifications/{id}/read',    [DocumentApiController::class, 'markNotificationRead']);
     });
 });
