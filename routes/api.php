@@ -21,7 +21,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
 
     // ── Public: Authentication ───────────────────────────────────────────
-    Route::post('/auth/login', [AuthApiController::class, 'login']);
+    Route::post('/auth/login',       [AuthApiController::class, 'login']);
+    Route::post('/auth/check-email', [AuthApiController::class, 'checkEmail']);
 
     // ── Public: Cross-VSuite Chairman authentication ─────────────────────
     // A second VSuite instance posts the Chairman's email here.

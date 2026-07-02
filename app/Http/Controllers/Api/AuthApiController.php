@@ -84,6 +84,32 @@ class AuthApiController extends Controller
     }
 
     /**
+     * POST /api/v1/auth/check-email
+     * Public endpoint — returns whether an email belongs to an active user.
+     * Used by the mobile app to discover which instances a user is registered on.
+     * Does NOT issue any token; no sensitive data is exposed.
+     */
+    public function checkEmail(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $user = User::where('email', $request->email)
+            ->where('is_active', 1)
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'exists'  => $user !== null,
+            'user'    => $user ? [
+                'name'        => $user->name,
+                'role'        => $user->role,
+                'department'  => $user->department,
+                'designation' => $user->designation,
+            ] : null,
+        ]);
+    }
+
+    /**
      * GET /api/v1/auth/me
      * Get the authenticated user's profile.
      */
