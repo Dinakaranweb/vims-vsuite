@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\DocumentApproval;
 use App\Models\User;
+use App\Services\ApprovalPathResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -52,11 +53,17 @@ class DocumentApiController extends Controller
             'approval_progress_pct'  => count($sequence) > 0 ? round(($currentIndex / count($sequence)) * 100) : 0,
             'created_by'             => optional(User::find($doc->by))->name,
             'created_by_dept'        => optional(User::find($doc->by))->department,
-            'attachment'             => $doc->attachment,
-            'attachment_url'         => $doc->attachment ? url('storage/' . $doc->attachment) : null,
+            'attachment'             => (bool) $doc->attachment,
+            'attachment_url'         => $doc->attachment ? $this->firstAttachmentUrl($doc) : null,
             'created_at'             => $doc->created_at?->toISOString(),
             'updated_at'             => $doc->updated_at?->toISOString(),
         ];
+    }
+
+    private function firstAttachmentUrl(DocumentApproval $doc): ?string
+    {
+        $path = DB::table('document_annexures')->where('doc_id', $doc->id)->value('annexure');
+        return $path ? Storage::url($path) : null;
     }
 
     private function logAction(DocumentApproval $doc, string $status, string $description, string $message): void
@@ -729,23 +736,27 @@ class DocumentApiController extends Controller
      * Create a new document (Staff / HOD / any authenticated user).
      * Multipart form-data when attaching a file.
      *
-     * Body: title, subject, description, to (dept), approval_sequence (JSON array),
-     *       priority?, amount?, is_payment_involved?, file? (attachment)
+     * The approval chain is computed server-side from the creator's division,
+     * payment involvement, amount, and purchase flag — same rules as the web
+     * app (see ApprovalPathResolver) — so the client never selects a
+     * department/approver directly.
+     *
+     * Body: title, subject, description?, priority?, amount?,
+     *       is_payment_involved?, is_purchase?, file? (attachment)
      */
     public function store(Request $request)
     {
         $user = $this->apiUser($request);
 
         $request->validate([
-            'title'              => 'required|string|max:255',
-            'subject'            => 'required|string',
-            'description'        => 'nullable|string',
-            'to'                 => 'required|string|max:255',
-            'approval_sequence'  => 'required|json',
-            'priority'           => 'nullable|in:Low,Normal,High,Urgent',
-            'amount'             => 'nullable|numeric|min:0',
-            'is_payment_involved'=> 'nullable|in:Y,N',
-            'file'               => 'nullable|file|max:10240',
+            'title'               => 'required|string|max:255',
+            'subject'             => 'required|string',
+            'description'         => 'nullable|string',
+            'priority'            => 'nullable|in:Low,Normal,High,Urgent',
+            'amount'              => 'nullable|numeric|min:0',
+            'is_payment_involved' => 'nullable|in:Y,N',
+            'is_purchase'         => 'nullable|in:Y,N',
+            'file'                => 'nullable|file|max:10240',
         ]);
 
         $attachmentPath = null;
@@ -758,27 +769,46 @@ class DocumentApiController extends Controller
             $attachmentPath = "{$folder}/{$name}";
         }
 
-        $sequence = json_decode($request->approval_sequence, true);
-        $docId    = 'DOC-' . strtoupper(Str::random(8));
+        $isPaymentInvolved = $request->input('is_payment_involved', 'N');
+        $isPurchase        = $request->input('is_purchase', 'N');
+        $amount             = (float) $request->input('amount', 0);
+
+        $approvalPath = ApprovalPathResolver::resolve($user, $isPaymentInvolved, $amount, $isPurchase);
+        $sequence     = $approvalPath['sequence'];
+        $firstApprover = $approvalPath['current_approver'];
+
+        $docId = 'DOC-' . strtoupper(Str::random(8));
 
         $doc = DocumentApproval::create([
-            'doc_id'              => $docId,
-            'by'                  => $user->id,
-            'from'                => $user->department,
-            'to'                  => $request->to,
-            'forwarded_to'        => $sequence[0] ?? $request->to,
-            'title'               => $request->title,
-            'subject'             => $request->subject,
-            'description'         => $request->description ?? '',
-            'status'              => 'Sent to ' . ($sequence[0] ?? $request->to),
-            'approval_status'     => 'Pending',
-            'approval_sequence'   => $request->approval_sequence,
+            'doc_id'                 => $docId,
+            'by'                     => $user->id,
+            'from'                   => $user->department,
+            'to'                     => $firstApprover,
+            'forwarded_to'           => $firstApprover,
+            'title'                  => $request->title,
+            'subject'                => $request->subject,
+            'description'            => $request->description ?? '',
+            'status'                 => 'Sent to ' . $firstApprover,
+            'approval_status'        => 'Pending',
+            'approval_sequence'      => json_encode($sequence),
             'current_sequence_index' => 0,
-            'priority'            => $request->input('priority', 'Normal'),
-            'amount'              => $request->input('amount', 0),
-            'is_payment_involved' => $request->input('is_payment_involved', 'N'),
-            'attachment'          => $attachmentPath,
+            'priority'               => $request->input('priority', 'Normal'),
+            'amount'                 => $amount,
+            'is_payment_involved'    => $isPaymentInvolved,
+            'is_purchase'            => $isPurchase,
+            // `attachment` is a has-attachment flag (boolean column); the real
+            // file path is stored in document_annexures, see below — mirrors
+            // the web flow's handleFileUploads().
+            'attachment'             => $attachmentPath !== null,
         ]);
+
+        if ($attachmentPath !== null) {
+            DB::table('document_annexures')->insert([
+                'doc_id'     => $doc->id,
+                'annexure'   => $attachmentPath,
+                'created_at' => now(),
+            ]);
+        }
 
         $this->logAction($doc, 'Created', "Document created via mobile API by <b>{$user->name}</b> ({$user->department}).", 'Document created');
 

@@ -22,6 +22,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use Carbon\Carbon;
 use App\Http\Controllers\NotificationController;
 use App\Jobs\SendTicketNotificationMail;
+use App\Services\ApprovalPathResolver;
 
 class DocumentApprovalController extends Controller
 {
@@ -47,7 +48,7 @@ class DocumentApprovalController extends Controller
         $amount = $request->input('amount', 0);
 
         // Determine approval path based on payment and amount
-        $approvalPath = $this->determineApprovalPath($user, $to, $isPaymentInvolved, $amount, $type);
+        $approvalPath = ApprovalPathResolver::resolve($user, $isPaymentInvolved, (float) $amount, $type, $to);
 
         if ($isDraft) {
             $newDocId = 'Draft';
@@ -112,74 +113,6 @@ class DocumentApprovalController extends Controller
             return redirect()->route('my_documents')->with($alert);
         }
         return redirect()->route('new_documents')->with($alert);
-    }
-
-    /**
-     * Determine the approval path based on HOD's division, payment involvement, and amount
-     * 
-     * @param User $user - The user creating the document (HOD)
-     * @param string $initialTo - Initial department/HOD selected (Medical Director or General Manager)
-     * @param string $isPaymentInvolved - 'Y' or 'N'
-     * @param float $amount - Document amount
-     * @param string $isPurchase - 'Y' or 'N'
-     * @return array - ['sequence' => [...], 'current_approver' => '...']
-     */
-    private function determineApprovalPath($user, $initialTo, $isPaymentInvolved, $amount, $isPurchase = 'N')
-    {
-        $sequence = [];
-        
-        // Step 1: Add the selected first approver
-        $sequence[] = $initialTo;
-        
-        // Step 2: Add Medical Director and General Manager based on HOD's division
-        $isClinical = ($user->division ?? '') === 'Clinical';
-        
-        if ($isClinical) {
-            // Clinical department: Medical Director first, then General Manager
-            if ($initialTo !== 'Medical Director') {
-                $sequence[] = 'Medical Director';
-            }
-            if ($initialTo !== 'General Manager') {
-                $sequence[] = 'General Manager';
-            }
-        } else {
-            // Non-Clinical department: General Manager first, then Medical Director
-            if ($initialTo !== 'General Manager') {
-                $sequence[] = 'General Manager';
-            }
-            if ($initialTo !== 'Medical Director') {
-                $sequence[] = 'Medical Director';
-            }
-        }
-        
-        // Remove duplicates (in case user selected the same as next approver)
-        $sequence = array_values(array_unique($sequence));
-        
-        // Step 3: If payment is involved, add payment-related approvals
-        if ($isPaymentInvolved === 'Y') {
-            if ($amount > 200000) {
-                // High value (>2 Lakhs) — STB Office → Chairman → PA to Chairman (selects Finance Head)
-                $sequence[] = 'STB Office';
-                $sequence[] = 'Chairman';
-                if ($isPurchase === 'Y') {
-                    $sequence[] = 'Purchase Head Chennai';
-                }
-                $sequence[] = 'PA to Chairman';
-
-            } else {
-                // ≤2 Lakhs — go directly to Finance Head Salem (no PA step)
-                // If purchase, route through Purchase Head first
-                if ($isPurchase === 'Y') {
-                    $sequence[] = 'Purchase Head';
-                }
-                $sequence[] = 'Finance Head Salem';
-            }
-        }
-        
-        return [
-            'sequence' => $sequence,
-            'current_approver' => $sequence[0]
-        ];
     }
 
     /**
