@@ -53,6 +53,7 @@ class DocumentApiController extends Controller
             'approval_progress_pct'  => count($sequence) > 0 ? round(($currentIndex / count($sequence)) * 100) : 0,
             'created_by'             => optional(User::find($doc->by))->name,
             'created_by_dept'        => optional(User::find($doc->by))->department,
+            'created_by_id'          => $doc->by,
             'attachment'             => (bool) $doc->attachment,
             'attachment_url'         => $doc->attachment ? $this->firstAttachmentUrl($doc) : null,
             'created_at'             => $doc->created_at?->toISOString(),
