@@ -81,9 +81,10 @@ class DocumentApiController extends Controller
             'updated_at'         => now(),
         ]);
 
+        // document_logs has no `by` column (unlike approval_log above) — see
+        // create_document_log_table migration.
         DB::table('document_logs')->insert([
             'doc_id'      => $doc->id,
-            'by'          => auth()->id(),
             'description' => $description,
             'created_at'  => now(),
             'updated_at'  => now(),
