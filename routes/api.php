@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthApiController;
 use App\Http\Controllers\Api\CrossAuthController;
+use App\Http\Controllers\Api\DeviceTokenController;
 use App\Http\Controllers\Api\DocumentApiController;
 use Illuminate\Support\Facades\Route;
 
@@ -64,5 +65,9 @@ Route::prefix('v1')->group(function () {
         // Notifications
         Route::get('/notifications',              [DocumentApiController::class, 'notifications']);
         Route::put('/notifications/{id}/read',    [DocumentApiController::class, 'markNotificationRead']);
+
+        // Device tokens (push notifications)
+        Route::post('/device-token',   [DeviceTokenController::class, 'store']);
+        Route::delete('/device-token', [DeviceTokenController::class, 'destroy']);
     });
 });

@@ -54,11 +54,7 @@ class DocumentApprovalController extends Controller
             $newDocId = 'Draft';
             $status = 'Draft';
         } else {
-            $maxDocNumber = DocumentApproval::where('doc_id', '!=', 'Draft')
-                ->selectRaw("MAX(CAST(SUBSTRING(doc_id, 9) AS UNSIGNED)) as max_number")
-                ->value('max_number');
-            $lastNumber = $maxDocNumber ? intval($maxDocNumber) : 0;
-            $newDocId = 'REG-DOC-' . str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+            $newDocId = DocumentApproval::nextDocId();
             $status = 'Sent to ' . $approvalPath['current_approver'] . ' by ' . $user->name . ', ' . $user->department;
         }
 

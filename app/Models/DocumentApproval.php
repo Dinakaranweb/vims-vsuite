@@ -52,8 +52,23 @@ class DocumentApproval extends Model
         'current_sequence_index', // Current position in sequence
     ];
     
+    /**
+     * Next sequential doc_id in the shared REG-DOC-NNNN series — used by both
+     * the web and mobile create flows so numbering never forks into separate
+     * series depending on which client created the document.
+     */
+    public static function nextDocId(): string
+    {
+        $maxDocNumber = static::where('doc_id', '!=', 'Draft')
+            ->selectRaw("MAX(CAST(SUBSTRING(doc_id, 9) AS UNSIGNED)) as max_number")
+            ->value('max_number');
+        $lastNumber = $maxDocNumber ? intval($maxDocNumber) : 0;
+
+        return 'REG-DOC-' . str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+    }
+
     // ==================== Relationships ====================
-    
+
     /**
      * Get the payment details for this document
      */

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DocumentApproval;
 use App\Models\User;
 use App\Services\ApprovalPathResolver;
+use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -104,6 +105,31 @@ class DocumentApiController extends Controller
             ]);
         } catch (\Exception $e) {
             // Notifications table may differ — fail silently
+        }
+
+        PushNotificationService::sendToUser(
+            $userId,
+            $doc->doc_id ?? 'Document',
+            $message,
+            ['type' => 'document', 'id' => $doc->id],
+        );
+    }
+
+    /**
+     * Notifies every active SuperAdmin/HOD in a department that a document
+     * now needs their attention — the web app's email flow does this via
+     * sendNotificationToDepartment(); the mobile API previously only ever
+     * notified the document's creator, never the next approver.
+     */
+    private function notifyDepartment(string $department, DocumentApproval $doc, string $message): void
+    {
+        $userIds = User::where('department', $department)
+            ->where('is_active', true)
+            ->whereIn('role', ['SuperAdmin', 'HOD'])
+            ->pluck('id');
+
+        foreach ($userIds as $userId) {
+            $this->notifyUser($userId, $doc, $message);
         }
     }
 
@@ -292,14 +318,20 @@ class DocumentApiController extends Controller
             ->where('doc_id', $doc->id)
             ->get(['mode', 'paid_amount', 'tds_amount', 'payment_date', 'payment_reference_no', 'expenditure_id']);
 
+        $annexures = DB::table('document_annexures')
+            ->where('doc_id', $doc->id)
+            ->get(['annexure'])
+            ->map(fn ($a) => [
+                'name' => basename($a->annexure),
+                'url'  => Storage::url($a->annexure),
+            ]);
+
         return response()->json([
             'success' => true,
             'data'    => array_merge($this->formatDoc($doc), [
                 'approval_log' => $approvalLog,
                 'payments'     => $payments,
-                'annexures'    => DB::table('document_annexures')
-                    ->where('doc_id', $doc->id)
-                    ->pluck('annexure'),
+                'annexures'    => $annexures,
             ]),
         ]);
     }
@@ -387,6 +419,7 @@ class DocumentApiController extends Controller
         ]);
         $this->logAction($doc, $approvalStatus, "Document approved via API by <b>{$user->name}</b> ({$user->department}). Forwarded to <b>{$nextApprover}</b>.", $request->input('message', 'Approved'));
         $this->notifyUser($doc->by, $doc, "Your document was approved by {$user->department}.");
+        $this->notifyDepartment($nextApprover, $doc, "{$doc->doc_id} was forwarded to {$nextApprover} for approval.");
 
         return response()->json(['success' => true, 'message' => "Approved. Document forwarded to {$nextApprover}.", 'data' => $this->formatDoc($doc->fresh())]);
     }
@@ -568,6 +601,11 @@ class DocumentApiController extends Controller
         $doc->update(['approval_status' => $status, 'forwarded_to' => $forwardTo, 'updated_at' => now()]);
         $this->logAction($doc, $status, "Document forwarded via API by <b>{$user->name}</b> to <b>{$forwardTo}</b>.", $request->input('message', 'Forwarded'));
 
+        if ($doc->by != $user->id) {
+            $this->notifyUser($doc->by, $doc, "{$user->name} forwarded {$doc->doc_id} to {$forwardTo}.");
+        }
+        $this->notifyDepartment($forwardTo, $doc, "{$doc->doc_id} was forwarded to {$forwardTo}.");
+
         return response()->json(['success' => true, 'message' => "Document forwarded to {$forwardTo}.", 'data' => $this->formatDoc($doc->fresh())]);
     }
 
@@ -595,6 +633,10 @@ class DocumentApiController extends Controller
 
         $status = "Commented by {$user->department}";
         $this->logAction($doc, $status, "Comment added via API by <b>{$user->name}</b>: {$request->message}", $request->message);
+
+        if ($doc->by != $user->id) {
+            $this->notifyUser($doc->by, $doc, "{$user->name} commented on {$doc->doc_id}.");
+        }
 
         return response()->json(['success' => true, 'message' => 'Comment added.']);
     }
@@ -696,6 +738,7 @@ class DocumentApiController extends Controller
 
         $this->logAction($doc, $approvalStatus, "Document approved via API by Chairman <b>{$user->name}</b>. Forwarded to <b>{$nextApprover}</b>.", $request->input('message', 'Approved by Chairman'));
         $this->notifyUser($doc->by, $doc, "Your document was approved by Chairman. Forwarded to {$nextApprover}.");
+        $this->notifyDepartment($nextApprover, $doc, "{$doc->doc_id} was forwarded to {$nextApprover} for approval.");
 
         return response()->json([
             'success' => true,
@@ -779,7 +822,10 @@ class DocumentApiController extends Controller
         $sequence     = $approvalPath['sequence'];
         $firstApprover = $approvalPath['current_approver'];
 
-        $docId = 'DOC-' . strtoupper(Str::random(8));
+        // Same REG-DOC-NNNN series the web app uses — not a separate scheme,
+        // so document numbers stay continuous regardless of which client
+        // created them.
+        $docId = DocumentApproval::nextDocId();
 
         $doc = DocumentApproval::create([
             'doc_id'                 => $docId,
@@ -813,6 +859,7 @@ class DocumentApiController extends Controller
         }
 
         $this->logAction($doc, 'Created', "Document created via mobile API by <b>{$user->name}</b> ({$user->department}).", 'Document created');
+        $this->notifyDepartment($firstApprover, $doc, "{$user->name} sent {$docId} to {$firstApprover} for approval.");
 
         return response()->json([
             'success' => true,
