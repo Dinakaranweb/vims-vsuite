@@ -33,8 +33,11 @@ class DocumentApiController extends Controller
             'id'                     => $doc->id,
             'doc_id'                 => $doc->doc_id,
             'title'                  => $doc->title,
-            'subject'                => strip_tags($doc->subject),
-            'description'            => strip_tags($doc->description),
+            // subject/description are authored via a rich-text editor on the
+            // web — sent raw so the mobile app can render the formatting
+            // instead of losing it to strip_tags().
+            'subject'                => $doc->subject,
+            'description'            => $doc->description,
             'from'                   => $doc->from,
             'to'                     => $doc->to,
             'forwarded_to'           => $doc->forwarded_to,
@@ -307,7 +310,7 @@ class DocumentApiController extends Controller
                 $by = User::find($log->by);
                 return [
                     'action'     => $log->status,
-                    'message'    => strip_tags($log->message ?? ''),
+                    'message'    => $log->message ?? '',
                     'by_name'    => optional($by)->name,
                     'by_dept'    => optional($by)->department,
                     'created_at' => $log->created_at,
@@ -355,7 +358,7 @@ class DocumentApiController extends Controller
                 $by = User::find($entry->by);
                 return [
                     'action'     => $entry->status,
-                    'message'    => strip_tags($entry->message ?? ''),
+                    'message'    => $entry->message ?? '',
                     'by_name'    => optional($by)->name,
                     'by_dept'    => optional($by)->department,
                     'created_at' => $entry->created_at,
