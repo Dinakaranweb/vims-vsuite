@@ -56,6 +56,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/documents/{id}/reject',   [DocumentApiController::class, 'reject']);
         Route::post('/documents/{id}/hold',     [DocumentApiController::class, 'hold']);
         Route::post('/documents/{id}/noted',    [DocumentApiController::class, 'noted']);
+        Route::post('/documents/{id}/acknowledge', [DocumentApiController::class, 'acknowledge']);
         Route::post('/documents/{id}/pending',  [DocumentApiController::class, 'markPending']);
         Route::post('/documents/{id}/discuss',  [DocumentApiController::class, 'discuss']);
         Route::post('/documents/{id}/forward',  [DocumentApiController::class, 'forward']);

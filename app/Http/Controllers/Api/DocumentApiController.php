@@ -515,6 +515,48 @@ class DocumentApiController extends Controller
     }
 
     /**
+     * POST /api/v1/documents/{id}/acknowledge
+     * STB Office-only action — mirrors the web app's "Acknowledge & Forward"
+     * button, which replaces the regular approve/reject/hold/etc. bar for
+     * that department (see handleSTBAcknowledge() in DocumentApprovalController).
+     * Body: { message? }
+     */
+    public function acknowledge(Request $request, int $id)
+    {
+        $user = $this->apiUser($request);
+        $doc  = DocumentApproval::find($id);
+        if (!$doc) return response()->json(['success' => false, 'message' => 'Document not found.'], 404);
+
+        $sequence     = json_decode($doc->approval_sequence, true) ?? [];
+        $currentIndex = (int) $doc->current_sequence_index;
+        $currentApprover = $sequence[$currentIndex] ?? null;
+
+        if ($user->department !== 'STB Office' || $currentApprover !== 'STB Office') {
+            return response()->json(['success' => false, 'message' => 'STB Office acknowledgment is not required at this stage.'], 403);
+        }
+
+        $nextIndex  = $currentIndex + 1;
+        $status     = "Acknowledged by {$user->department}";
+        $remarks    = $request->input('message', 'Document acknowledged and forwarded');
+
+        if ($nextIndex >= count($sequence)) {
+            $doc->update(['approval_status' => $status, 'status' => 'Completed', 'forwarded_to' => $doc->from, 'current_sequence_index' => $nextIndex, 'updated_at' => now()]);
+            $logMessage = 'Document acknowledged and completed';
+            $this->notifyUser($doc->by, $doc, 'Your document has been acknowledged and completed by STB Office.');
+        } else {
+            $nextApprover = $sequence[$nextIndex];
+            $doc->update(['approval_status' => $status, 'status' => "Sent to {$nextApprover}", 'forwarded_to' => $nextApprover, 'to' => $nextApprover, 'current_sequence_index' => $nextIndex, 'updated_at' => now()]);
+            $logMessage = "Document acknowledged by STB Office and forwarded to {$nextApprover}";
+            $this->notifyDepartment($nextApprover, $doc, 'A document has been forwarded to you after STB Office acknowledgment.');
+            $this->notifyUser($doc->by, $doc, "Your document has been acknowledged by STB Office and forwarded to {$nextApprover}.");
+        }
+
+        $this->logAction($doc, $status, "{$logMessage} by <b>{$user->name}</b>.", $remarks);
+
+        return response()->json(['success' => true, 'message' => 'Document acknowledged and forwarded successfully.', 'data' => $this->formatDoc($doc->fresh())]);
+    }
+
+    /**
      * POST /api/v1/documents/{id}/pending
      * Body: { message }
      */

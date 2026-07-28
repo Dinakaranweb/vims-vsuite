@@ -22,7 +22,6 @@ return new class extends Migration
             $table->string('description');
             $table->string('approval_status');
             $table->string('status');
-            $table->string('attachment');
             $table->string('tags');
             $table->string('reference');
 

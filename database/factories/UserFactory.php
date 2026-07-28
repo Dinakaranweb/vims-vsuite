@@ -25,10 +25,19 @@ class UserFactory extends Factory
     {
         return [
             'name' => fake()->name(),
+            'username' => fake()->unique()->userName(),
+            'emp_id' => fake()->unique()->numerify('EMP####'),
+            'designation' => fake()->jobTitle(),
+            'department' => 'Administration',
+            'division' => 'Non Clinical',
+            'role' => 'Staff',
             'email' => fake()->unique()->safeEmail(),
+            'phone' => fake()->numerify('9#########'),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            'is_active' => 1,
+            'can_use_api' => 1,
         ];
     }
 
