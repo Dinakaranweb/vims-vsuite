@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendTicketNotificationMail;
 use App\Models\DocumentApproval;
 use App\Models\User;
 use App\Services\ApprovalPathResolver;
@@ -10,6 +11,7 @@ use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 class DocumentApiController extends Controller
@@ -116,13 +118,25 @@ class DocumentApiController extends Controller
             $message,
             ['type' => 'document', 'id' => $doc->id],
         );
+
+        // Mirrors the web app's sendNotificationToUser() — actions taken from the
+        // mobile app previously only reached the recipient via push, which silently
+        // dropped anyone without the app installed/notifications enabled.
+        $user = User::find($userId);
+        if ($user && $user->email) {
+            $mail_details = [
+                'content' => $message . '<br><br>ID - <b><i>' . $doc->doc_id . '</i></b><br>Titled - <b><i>' . $doc->title . '</i></b>',
+                'url'     => URL::to('view/document/' . $doc->id),
+                'title'   => 'Document Status Update',
+            ];
+
+            SendTicketNotificationMail::dispatch($user, $mail_details, 'Document Update - ' . $doc->doc_id, 'frontend.email.document_notifications');
+        }
     }
 
     /**
      * Notifies every active SuperAdmin/HOD in a department that a document
-     * now needs their attention — the web app's email flow does this via
-     * sendNotificationToDepartment(); the mobile API previously only ever
-     * notified the document's creator, never the next approver.
+     * now needs their attention (DB notification + push + email via notifyUser).
      */
     private function notifyDepartment(string $department, DocumentApproval $doc, string $message): void
     {

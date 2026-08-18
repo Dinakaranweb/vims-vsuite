@@ -17,7 +17,6 @@ use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\PostalController;
 use App\Http\Controllers\PostalForwardingController;
 use App\Http\Controllers\DocumentApprovalController;
-use App\Http\Controllers\DdeDetailsController;
 use App\Http\Controllers\FoController;
 use App\Http\Controllers\ChairmanController;
 use App\Http\Controllers\UnifiedDashboardController;
@@ -415,9 +414,6 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/postal/save-due-date/{post_id}', [PostalController::class, 'saveDueDate'])->name('save_due_date');
     Route::post('/postal/close-post/{post_id}', [PostalController::class, 'closePost'])->name('close_post');
-    Route::post('/postal/save-dde-details/{post_id}', [PostalController::class, 'saveDdeDetails'])->name('save_dde_details');
-    Route::put('/admin/postal/dde-details/update/{post_id}/{dde_id}', [PostalController::class, 'updateDDEDetails'])->name('update_dde_details');
-    Route::get('/dde-details', [DdeDetailsController::class, 'index'])->name('dde_details.index');
     
     /* Out Entry */
     Route::get('/postal/out/entry', [PostalController::class, 'createOutPost'])->name('postal_add_out_entry');

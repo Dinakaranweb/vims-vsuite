@@ -394,6 +394,9 @@ public function changeDocumentStatus(Request $request)
         case 'Forward':
             $response = $this->handleForward($doc, $user, $request);
             break;
+        case 'Consult Department':
+            $response = $this->handleConsultDepartment($doc, $user, $approvalSequence, $currentIndex, $request);
+            break;
         case 'Commented':
             $response = $this->handleComment($doc, $user, $request);
             break;
@@ -821,6 +824,64 @@ public function changeDocumentStatus(Request $request)
         $this->sendNotificationToUser($doc->by, $doc, "Your document has been forwarded to " . $forwardTo);
         
         return response()->json(['message' => 'Document Forwarded', 'status' => 'success']);
+    }
+
+    /**
+     * Medical Director / General Manager sends an equipment-purchase document to another
+     * department (e.g. Biomedical) for consultation. Unlike the generic Forward action,
+     * this splices [consultDept, currentApprover] into the tracked approval_sequence right
+     * after the current step, so once the consulted department approves, the existing
+     * sequence-index machinery in handleApproval() naturally routes it back here for
+     * final sign-off before continuing on to Purchase Head / Finance Head.
+     */
+    private function handleConsultDepartment($doc, $user, $approvalSequence, $currentIndex, $request)
+    {
+        $request->validate([
+            'consult_department' => 'required|string',
+            'message' => 'required|string',
+        ]);
+
+        $currentApprover = $approvalSequence[$currentIndex] ?? null;
+
+        if (!in_array($currentApprover, ['Medical Director', 'General Manager'])) {
+            return response()->json([
+                'message' => 'Consulting another department is only available at the Medical Director / General Manager stage',
+                'status' => 'error',
+            ]);
+        }
+
+        $consultDept = $request->input('consult_department');
+
+        array_splice($approvalSequence, $currentIndex + 1, 0, [$consultDept, $currentApprover]);
+        $nextIndex = $currentIndex + 1;
+
+        $approval_status = "Sent to " . $consultDept . " for consultation by " . $user->department;
+
+        $doc->update([
+            'approval_status' => $approval_status,
+            'status' => "Sent to " . $consultDept,
+            'forwarded_to' => $consultDept,
+            'to' => $consultDept,
+            'approval_sequence' => json_encode($approvalSequence),
+            'current_sequence_index' => $nextIndex,
+            'updated_at' => now(),
+        ]);
+
+        DB::table('document_approval_forwardings')->insertOrIgnore([
+            'doc_id' => $doc->id,
+            'forwarded_by' => Auth::id(),
+            'forwarded_to' => $consultDept,
+            'created_at' => now(),
+        ]);
+
+        $log_message = "Document sent to " . $consultDept . " for consultation by " . $user->department
+            . " (will return to " . $currentApprover . " for final sign-off)";
+        $this->logApprovalAction($doc, $approval_status, $log_message, $request->input('message', $log_message));
+
+        $this->sendNotificationToDepartment($consultDept, $doc, "A document has been sent to you for consultation by " . $user->department);
+        $this->sendNotificationToUser($doc->by, $doc, "Your document has been sent to " . $consultDept . " for consultation");
+
+        return response()->json(['message' => 'Document Sent for Consultation', 'status' => 'success']);
     }
 
     private function handleComment($doc, $user, $request)

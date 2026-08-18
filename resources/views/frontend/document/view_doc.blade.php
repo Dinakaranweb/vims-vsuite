@@ -792,6 +792,13 @@
                                                                     <i class="fas fa-thumbs-up"></i> Approve
                                                                 </a>
                                                             </div>
+                                                            @if($doc->is_purchase === 'Y')
+                                                                <div class="action-btn-group w-100">
+                                                                    <a href="#" class="btn btn-outline-warning w-100 mb-2" id="modal-consult-department">
+                                                                        <i class="fas fa-comments"></i> Consult Department
+                                                                    </a>
+                                                                </div>
+                                                            @endif
                                                         @endif
 
                                                         <!-- PA to Chairman / PA to GM (Select Finance Head) -->

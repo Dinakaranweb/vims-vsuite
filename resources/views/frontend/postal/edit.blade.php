@@ -56,54 +56,25 @@
                                   <div class="col-sm-12 col-md-3">
                                       <div class="selectgroup w-100">
                                         <label class="selectgroup-item">
-                                          <input type="radio" name="type_to" value="DDE" class="selectgroup-input" onclick="toggleFields()">
-                                          <span class="selectgroup-button">DDE</span>
-                                        </label>
-                                        <label class="selectgroup-item">
-                                          <input type="radio" name="type_to" value="Staff" class="selectgroup-input" onclick="toggleFields()">
+                                          <input type="radio" name="type_to" value="Staff" class="selectgroup-input" onclick="toggleFields()" checked>
                                           <span class="selectgroup-button">Official</span>
                                         </label>
                                       </div>
                                   </div>
                                   <!-- Staff Name Field -->
-                                  <div id="staff-name-field" class="col-sm-12 col-md-4" style="display: none;">
+                                  <div id="staff-name-field" class="col-sm-12 col-md-4" style="display: block;">
                                     <input type="text" id="staff_name" name="staff_name" class="form-control" placeholder="Name" autocomplete="off">
                                     <input type="hidden" id="staff_id" name="staff_id" value="">
                                     <div id="staff-suggestions" class="dropdown-menu" style="display:none;"></div>
                                   </div>
-                                  
-                                  <!-- DDE Fields -->
-                                  <div id="dde-fields" class="col-sm-12 col-md-4" style="display: none;">
-                                    <input type="text" id="payment_mode" name="payment_mode" class="form-control mb-2" placeholder="Payment Mode" autocomplete="off">
-                                    <input type="text" id="dde_number" name="dde_number" class="form-control mb-2" placeholder="Reference number" autocomplete="off">
-                                    <input type="text" id="dde_amount" name="dde_amount" class="form-control mb-2" placeholder="Amount" autocomplete="off">
-                                  </div>
                                 </div>
-                              
+
 
                               <!-- JavaScript -->
                               <script>
                                 function toggleFields() {
-                                  const selectedValue = document.querySelector('input[name="type_to"]:checked').value;
-                                  
                                   const staffNameField = document.getElementById('staff-name-field');
-                                  const ddeFields = document.getElementById('dde-fields');
-
-                                  // Display fields based on selection
-                                    if (selectedValue === 'Staff') {
-                                        staffNameField.style.display = 'block';
-                                        ddeFields.style.display = 'none';
-                                        ddeFields.style.marginLeft = '0'; // Reset margin-left for ddeFields
-                                    } else if (selectedValue === 'DDE') {
-                                        ddeFields.style.display = 'block';
-                                        staffNameField.style.display = 'none';
-                                        staffNameField.style.marginLeft = '0'; // Reset margin-left for staffNameField
-                                    } else {
-                                        staffNameField.style.display = 'none';
-                                        staffNameField.style.marginLeft = '0'; // Reset margin-left
-                                        ddeFields.style.display = 'none';
-                                        ddeFields.style.marginLeft = '0'; // Reset margin-left
-                                    }
+                                  staffNameField.style.display = 'block';
                                 }
 
                                 // Call on page load to set the initial state

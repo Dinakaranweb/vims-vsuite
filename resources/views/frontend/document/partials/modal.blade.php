@@ -584,6 +584,30 @@
     </div>
 </form>
 
+<form class="modal-part" id="modal-consult-department-part">
+    @csrf
+    <div class="form-group">
+        <label>Consult Department</label>
+        <div class="input-group mb-4">
+            <select name="consult_department" class="form-control" required>
+                <option value="">-- Select Department --</option>
+                @foreach($departments as $dept)
+                    <option value="{{ $dept->dept_label }}">{{ $dept->dept_label }}</option>
+                @endforeach
+            </select>
+        </div>
+        <small class="form-text text-muted">The document will be sent to this department for consultation, then automatically return to you for final sign-off.</small>
+        <label class="mt-3">Message</label>
+        <div class="input-group">
+            <div class="col-sm-12 col-md-12">
+                <textarea name="message" class="summernote form-control"></textarea>
+            </div>
+        </div>
+        <input type="hidden" name="doc_id" value="{{ $doc->id }}">
+        <input type="hidden" name="status" value="Consult Department">
+    </div>
+</form>
+
 <form class="modal-part" id="modal-re-submit-part">
     @csrf
     <div class="form-group">

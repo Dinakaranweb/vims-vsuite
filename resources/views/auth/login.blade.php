@@ -15,7 +15,7 @@
                   </h2>
                   <div class="vsuite-divider mx-auto mb-2"></div>
                   <div class="vsuite-tagline text-muted mb-1">
-                      VMRF-DU
+                      VIMS
                   </div>
               </div>
 

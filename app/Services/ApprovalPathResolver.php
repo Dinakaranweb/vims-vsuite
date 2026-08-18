@@ -25,7 +25,15 @@ class ApprovalPathResolver
         $isClinical = ($user->division ?? '') === 'Clinical';
         $initialTo  = $initialTo ?: ($isClinical ? 'Medical Director' : 'General Manager');
 
-        $sequence = [$initialTo];
+        $sequence = [];
+
+        // Staff-created documents go to their own department HOD first;
+        // HODs (and other roles) go straight into the Medical Director / GM chain.
+        if (($user->role ?? '') === 'Staff' && !empty($user->department)) {
+            $sequence[] = $user->department;
+        }
+
+        $sequence[] = $initialTo;
 
         if ($isClinical) {
             if ($initialTo !== 'Medical Director') $sequence[] = 'Medical Director';

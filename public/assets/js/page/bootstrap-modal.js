@@ -994,6 +994,59 @@ $("#modal-forward-doc").fireModal({
   ]
 });
 
+$("#modal-consult-department").fireModal({
+  title: 'Consult Department',
+  body: $("#modal-consult-department-part"),
+  footerClass: 'bg-whitesmoke',
+  autoFocus: false,
+  created: function(modal) {
+        $(modal).find('.modal-dialog').addClass('modal-lg');
+    },
+  onFormSubmit: function(modal, e, form) {
+    e.preventDefault(); // Prevent the default form submission immediately
+
+    $(e.target).find('.summernote, .summernote-simple').each(function() {
+      try { $(this).val($(this).summernote('code')); } catch(ex) {}
+    });
+    let form_data = $(e.target).serialize();
+
+    $.ajax({
+      type: 'POST',
+      url: '/change/document/status',
+      data: form_data,
+      success: function(response) {
+        if (response.status === 'success') {
+          modal.find('.modal-body').prepend('<div class="alert alert-success">' + response.message + '</div>');
+
+          // Reload the page after a short delay to allow the message to be visible
+          setTimeout(function() {
+            location.reload();
+          }, 2000); // Delay for 2 seconds
+        } else if (response.status === 'error') {
+          modal.find('.modal-body').prepend('<div class="alert alert-danger">' + response.message + '</div>');
+        }
+      },
+      error: function(xhr) {
+        let response = JSON.parse(xhr.responseText);
+        modal.find('.modal-body').prepend('<div class="alert alert-danger">' + response.message + '</div>');
+      },
+      complete: function() {
+        form.stopProgress(); // Stop the loading spinner
+      }
+    });
+  },
+  buttons: [
+    {
+      text: 'Send for Consultation',
+      submit: true,
+      class: 'btn btn-outline-warning btn-shadow',
+      handler: function(modal) {
+        // No additional action needed here
+      }
+    }
+  ]
+});
+
 $("#modal-re-submit").fireModal({
   title: 'Re-Submit',
   body: $("#modal-re-submit-part"),
