@@ -265,8 +265,10 @@
                                     @endforeach
                                     <script>
                                         function handleConfirmYes(docId) {
-                                            // Redirect to the specified route with the correct ticket ID
-                                            window.location.href = "{{ url('/delete/document') }}/" + docId;
+                                            var reason = prompt('Please enter a reason for deleting this document:');
+                                            if (reason === null) return;
+                                            if (!reason.trim()) { alert('A reason is required to delete a document.'); return; }
+                                            window.location.href = "{{ url('/delete/document') }}/" + docId + "?reason=" + encodeURIComponent(reason);
                                         }
                                     </script>
                                 </tbody>

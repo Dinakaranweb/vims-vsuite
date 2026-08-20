@@ -15,7 +15,7 @@ class UserSeeder extends Seeder
     {
         // ==================== IT Admin (manages VSuite instances & mobile API) ==
         User::updateOrCreate(
-            ['email' => 'itadmin@vmu.edu.in'],
+            ['email' => 'vmu.web@vmu.edu.in'],
             [
                 'name'        => 'IT Admin',
                 'username'    => 'itadmin',

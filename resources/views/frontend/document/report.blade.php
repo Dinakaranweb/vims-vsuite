@@ -173,7 +173,7 @@
                             <div class="d-flex justify-content-between w-100">
                                 <h4>Document Report</h4>
                                 <div>
-                                    <a href="{{ route('download_report_pdf') }}" class="btn btn-danger btn-sm mr-2">
+                                    <a href="{{ route('download_report_doc') }}" class="btn btn-danger btn-sm mr-2">
                                         <i class="fas fa-file-pdf"></i> Download PDF
                                     </a>
                                     <a href="{{ route('download_report_excel') }}" class="btn btn-success btn-sm">
@@ -185,7 +185,7 @@
                         <div class="card-body">
                             <!-- Search Form -->
                             <div class="mb-4">
-                                <form method="GET" action="{{ route('report_documents') }}" class="form-row align-items-end">
+                                <form method="GET" action="{{ route('report-doc') }}" class="form-row align-items-end">
                                     <div class="form-group col-md-3">
                                         <label>Document ID</label>
                                         <input type="text" name="doc_id" class="form-control" placeholder="Search by Document ID" value="{{ request('doc_id') }}">
@@ -226,7 +226,7 @@
                                         <button type="submit" class="btn btn-primary btn-block">Search</button>
                                     </div>
                                     <div class="form-group col-md-1">
-                                        <a href="{{ route('report_documents') }}" class="btn btn-secondary btn-block">Reset</a>
+                                        <a href="{{ route('report-doc') }}" class="btn btn-secondary btn-block">Reset</a>
                                     </div>
                                 </form>
                             </div>

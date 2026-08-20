@@ -584,6 +584,72 @@
     </div>
 </form>
 
+<form class="modal-part" id="modal-consult-department-part">
+    @csrf
+    <div class="form-group">
+        <label>Consult Department</label>
+        <div class="input-group mb-4">
+            <select name="consult_department" class="form-control" required>
+                <option value="">-- Select Department --</option>
+                @foreach($departments as $dept)
+                    <option value="{{ $dept->dept_label }}">{{ $dept->dept_label }}</option>
+                @endforeach
+            </select>
+        </div>
+        <small class="form-text text-muted">The document will be sent to this department for consultation, then automatically return to you for final sign-off.</small>
+        <label class="mt-3">Message</label>
+        <div class="input-group">
+            <div class="col-sm-12 col-md-12">
+                <textarea name="message" class="summernote form-control"></textarea>
+            </div>
+        </div>
+        <input type="hidden" name="doc_id" value="{{ $doc->id }}">
+        <input type="hidden" name="status" value="Consult Department">
+    </div>
+</form>
+
+<form class="modal-part" id="modal-enter-amount-part">
+    @csrf
+    <div class="form-group">
+        <label>Payment Amount (₹)</label>
+        <div class="input-group mb-2">
+            <input type="number" name="amount" class="form-control" step="0.01" min="0"
+                   value="{{ $doc->amount ?: '' }}" placeholder="Enter the payment amount" required>
+        </div>
+        <small class="form-text text-muted">
+            Amounts above ₹2,00,000 route through STB Office → Chairman for approval; ₹2,00,000 and below route
+            directly to Finance Head. Entering the amount will correct the remaining approval route if needed,
+            without affecting steps already completed.
+        </small>
+        <label class="mt-3">Message (optional)</label>
+        <div class="input-group">
+            <div class="col-sm-12 col-md-12">
+                <textarea name="message" class="summernote form-control"></textarea>
+            </div>
+        </div>
+        <input type="hidden" name="doc_id" value="{{ $doc->id }}">
+        <input type="hidden" name="status" value="Enter Amount">
+    </div>
+</form>
+
+<form class="modal-part" id="modal-acknowledge-consultation-part">
+    @csrf
+    <div class="form-group">
+        <label>Remarks</label>
+        <div class="input-group">
+            <div class="col-sm-12 col-md-12">
+                <textarea name="message" class="summernote form-control"></textarea>
+            </div>
+        </div>
+        <small class="form-text text-muted">
+            This sends your remarks back to whoever raised the consultation - it's an acknowledgement, not an
+            approval. The document will return to them to continue the approval process.
+        </small>
+        <input type="hidden" name="doc_id" value="{{ $doc->id }}">
+        <input type="hidden" name="status" value="Acknowledge Consultation">
+    </div>
+</form>
+
 <form class="modal-part" id="modal-re-submit-part">
     @csrf
     <div class="form-group">
@@ -611,21 +677,22 @@
         <input type="hidden" name="status" value="Commented">
     </div>
     <div class="form-group row mb-4">
-        <label class="col-form-label text-md-right col-12 col-md-3 col-lg-3">File</label>
+        <label class="col-form-label text-md-right col-12 col-md-3 col-lg-3">Files</label>
         <div class="col-sm-12 col-md-7">
         <div class="custom-file">
-            <input type="file" name="file" class="custom-file-input">
-            <label class="custom-file-label">Choose file</label>
+            <input type="file" name="files[]" class="custom-file-input" id="comment-file-input" multiple>
+            <label class="custom-file-label">Choose file(s)</label>
         </div>
         </div>
     </div>
     <script>
         $(document).ready(function () {
-            $('.custom-file-input').on('change', function (event) {
-                var inputFile = event.currentTarget;
-                $(inputFile).parent()
+            $('#comment-file-input').on('change', function (event) {
+                var files = event.currentTarget.files;
+                var label = files.length > 1 ? files.length + ' files selected' : (files[0] ? files[0].name : 'Choose file(s)');
+                $(event.currentTarget).parent()
                     .find('.custom-file-label')
-                    .html(inputFile.files[0].name);
+                    .html(label);
             });
         });
     </script>

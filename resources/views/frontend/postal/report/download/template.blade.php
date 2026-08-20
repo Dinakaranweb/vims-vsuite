@@ -79,10 +79,6 @@
                 {{ $post->post_id }}<br>
                 <b>{{ $post->sent_by }}</b><br>
                 {!! $post->post_from_address !!}<br>
-                @if($post->dde_paid_amount)
-                Amount Paid : {{ $post->dde_paid_amount }}<br>
-                Payment Mode : {{ $post->dde_payment_mode }}<br>
-                @endif
             </td>
             <td style="padding:12px;text-align:center; font-size:13px ;border:1px solid #ddd;background-color:#fff;">
                 @php

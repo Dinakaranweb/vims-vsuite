@@ -15,7 +15,6 @@ use App\Models\Postal;
 use App\Models\PostalForwarding;
 use App\Models\ReplyPost;
 use App\Models\User;
-use App\Models\DdeDetails;
 
 use Barryvdh\DomPDF\Facade\Pdf;
 use Dompdf\Options;
@@ -657,11 +656,8 @@ class PostalController extends Controller
         $type = $request->input('type');
         $subject = $request->input('subject');
         
-        $student_name = $request->input('student_name');
-        $student_reg_no = $request->input('student_reg_no');
-        
         //dd($request);
-        
+
         if($type == 'Hand Delivered'){
             $to_address = 'Hand Delivered';
         }else{
@@ -711,25 +707,8 @@ class PostalController extends Controller
             ]);
 
             $lastInsertedPost = Postal::latest()->first();
-            
+
             //dd($lastInsertedPost);
-            
-            if($student_name && $student_reg_no){
-                
-                if($request->has('is_fee_paid')){
-                    $paid = true;
-                }else{
-                    $paid = false;
-                }
-                
-                DdeDetails::create([
-                    'post_id' => $lastInsertedPost->id,
-                    'reg_no' => $student_reg_no,
-                    'student_name' => $student_name,
-                    'is_fee_paid' => $paid,
-                ]);
-                
-            }
 
             $createdAt = Carbon::parse($lastInsertedPost->created_at);
 
@@ -1022,40 +1001,6 @@ class PostalController extends Controller
                 'registrar_id' => $reg_id,
                 'subject' => $subject,
                 'status' => 'Forwarded',
-                'forward_to' => $request->input('forward_to'),
-                'forwarded_by' => Auth::id(),
-                'original_at' => $to,
-                'updated_at' => now()
-            ]);
-
-            $lastInsertedPost = Postal::findOrFail($request->input('post_id'));
-
-            $createdAt = Carbon::parse($lastInsertedPost->created_at);
-
-            $formattedCreatedAt = $createdAt->format('M d, Y g:ia');
-
-            $log_description = "Post Forwarded to <b>" .$to. "</b> by <b>" .Auth::user()->name. " at ".$formattedCreatedAt;
-
-            DB::table('postal_logs')->insert([
-                'post_id' => $lastInsertedPost->id,
-                'description' => $log_description,
-                'created_at' => now()
-            ]);
-
-            /*Notification to Head*/
-
-            $notificationController = new notificationController();
-            $notificationController->notificationEntry($to, 'postal', $lastInsertedPost->id, $log_description);
-
-        }elseif($to_type == 'DDE'){
-            
-            Postal::FindorFail($request->input('post_id'))->update([
-                'registrar_id' => $reg_id,
-                'subject' => $subject,
-                'status' => 'Forwarded',
-                'dde_payment_mode' => $request->input('payment_mode'),
-                'dde_paid_amount' => $request->input('dde_amount'),
-                'dde_dd_number' => $request->input('dde_number'),
                 'forward_to' => $request->input('forward_to'),
                 'forwarded_by' => Auth::id(),
                 'original_at' => $to,
@@ -1462,29 +1407,28 @@ class PostalController extends Controller
 
         $post = Postal::FindorFail($postal_id);
         $logs = DB::table('postal_logs')->where('post_id', '=', $post->id)->get();
-        $ddeDetails = DdeDetails::where('post_id', $post->id)->first();
-        
+
         $canView = false;
-        
+
         if($post->forward_to){
-            
+
             //dd('stop');
-            
+
             $forwardedTo = explode(', ', $post->forward_to);
-            
+
             $canView = false;
-            
+
             if (in_array(Auth::user()->department, $forwardedTo) || $post->sent_to == Auth::user()->department) {
                 $canView = true;
             }
-            
+
         }else{
-            
+
             if($post->sent_to == Auth::user()->department){
                 $canView = true;
             }
         }
-        
+
         if(Auth::user()->role == 'SuperAdmin'){
             $canView = true;
         }
@@ -1498,21 +1442,21 @@ class PostalController extends Controller
         Postal::FindorFail($postal_id)->update([
             'is_read' => true
         ]);
-        
+
         if(Auth::user()->role != 'SuperAdmin' && $canView == false){
-            
+
             $alert = array(
                 'message' => 'Access Denied',
                 'alert-type' => 'error'
-            );  
-    
-    
+            );
+
+
             return redirect()->back()->with($alert);
-            
+
         }
 
         //return view('frontend.postal.view', compact('post'));
-        return view('frontend.admin.postal.view_post', compact('activeMenu', 'activeDropdown', 'post', 'logs', 'rps', 'ddeDetails'));
+        return view('frontend.admin.postal.view_post', compact('activeMenu', 'activeDropdown', 'post', 'logs', 'rps'));
 
     }
 
@@ -1525,7 +1469,6 @@ class PostalController extends Controller
 
         $post = Postal::FindorFail($postal_id);
         $logs = DB::table('postal_logs')->where('post_id', '=', $post->id)->get();
-        $ddeDetails = DdeDetails::where('post_id', $post->id)->first();
 
         //dd($post);
         
@@ -1579,7 +1522,7 @@ class PostalController extends Controller
         }
 
         //return view('frontend.postal.view', compact('post'));
-        return view('frontend.admin.postal.view_post', compact('activeMenu', 'activeDropdown', 'post', 'logs', 'rps', 'ddeDetails'));
+        return view('frontend.admin.postal.view_post', compact('activeMenu', 'activeDropdown', 'post', 'logs', 'rps'));
 
     }
 
@@ -1818,75 +1761,5 @@ class PostalController extends Controller
 
         // Download the PDF
         return $pdf->download('Postal_incoming_report.pdf');
-    }
-
-    public function saveDdeDetails(Request $request, $post_id)
-    {
-        $request->validate([
-            'c_code' => 'nullable|string|max:255',
-            'reg_no' => 'nullable|string|max:255',
-            'fee_item' => 'nullable|string|max:255',
-            'mode' => 'nullable|string|max:255',
-            'payment_reference_no' => 'nullable|string|max:255',
-            'payment_date' => 'nullable|date',
-            'micr_code' => 'nullable|string|max:255',
-            'bank_name' => 'nullable|string|max:255',
-            'branch' => 'nullable|string|max:255',
-            'amount' => 'nullable|numeric',
-            'remarks' => 'nullable|string',
-            'receipt_no' => 'nullable|string|max:255',
-            'received_date' => 'nullable|date',
-        ]);
-        
-        if($request->has('is_fee_paid')){
-            $paid = true;
-        }else{
-            $paid = false;
-        }
-
-        // Save the DDE details
-        DdeDetails::create([
-            'post_id' => $post_id,
-            'c_code' => $request->input('c_code'),
-            'reg_no' => $request->input('reg_no'),
-            'student_name' => $request->input('student_name'),
-            'is_fee_paid' => $paid,
-            'fee_item' => $request->input('fee_item'),
-            'mode' => $request->input('mode'),
-            'payment_reference_no' => $request->input('payment_reference_no'),
-            'payment_date' => $request->input('payment_date'),
-            'micr_code' => $request->input('micr_code'),
-            'bank_name' => $request->input('bank_name'),
-            'branch' => $request->input('branch'),
-            'amount' => $request->input('amount'),
-            'remarks' => $request->input('remarks'),
-            'receipt_no' => $request->input('receipt_no'),
-            'received_date' => $request->input('received_date'),
-        ]);
-
-        return redirect()->back()->with('success', 'DDE details saved successfully.');
-    }
-    
-    public function updateDDEDetails(Request $request, $post_id, $dde_id)
-    {
-        $dde = DdeDetails::findOrFail($dde_id);
-        $dde->reg_no = $request->reg_no;
-        $dde->student_name = $request->student_name;
-        $dde->c_code = $request->c_code;
-        $dde->fee_item = $request->fee_item;
-        $dde->mode = $request->mode;
-        $dde->payment_reference_no = $request->payment_reference_no;
-        $dde->payment_date = $request->payment_date;
-        $dde->micr_code = $request->micr_code;
-        $dde->is_fee_paid = $request->has('is_fee_paid');
-        $dde->bank_name = $request->bank_name;
-        $dde->branch = $request->branch;
-        $dde->amount = $request->amount;
-        $dde->remarks = $request->remarks;
-        $dde->receipt_no = $request->receipt_no;
-        $dde->received_date = $request->received_date;
-        $dde->save();
-
-        return redirect()->back()->with('success', 'DDE Details updated successfully.');
     }
 }

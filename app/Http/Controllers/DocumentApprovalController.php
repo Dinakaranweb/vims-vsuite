@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Arr;
 use App\Models\Department;
 use App\Models\Ticket;
 use App\Models\DocumentApproval;
@@ -87,6 +88,15 @@ class DocumentApprovalController extends Controller
             'approval_sequence' => json_encode($approvalPath['sequence']),
             'current_sequence_index' => 0,
         ]);
+
+        if ($status !== 'Draft') {
+            DB::table('document_approval_forwardings')->insert([
+                'doc_id' => $documentApproval->id,
+                'forwarded_by' => Auth::id(),
+                'forwarded_to' => $approvalPath['current_approver'],
+                'created_at' => now(),
+            ]);
+        }
 
         $this->handleFileUploads($request, $documentApproval->id, $user);
         $this->logDocumentCreation($documentApproval, $user, $status, $approvalPath['current_approver']);
@@ -268,15 +278,11 @@ class DocumentApprovalController extends Controller
         // Determine if we need to generate a new doc_id
         $newDocId = $document->doc_id;
         if (!$isDraft && $document->doc_id === 'Draft') {
-            $maxDocNumber = DocumentApproval::where('doc_id', '!=', 'Draft')
-                ->selectRaw("MAX(CAST(SUBSTRING(doc_id, 9) AS UNSIGNED)) as max_number")
-                ->value('max_number');
-            $lastNumber = $maxDocNumber ? intval($maxDocNumber) : 0;
-            $newDocId = 'REG-DOC-' . str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+            $newDocId = DocumentApproval::nextDocId();
         }
 
         // Determine approval path
-        $approvalPath = $this->determineApprovalPath($user, $to, $isPaymentInvolved, $amount, $type);
+        $approvalPath = ApprovalPathResolver::resolve($user, $isPaymentInvolved, (float) $amount, $type, $to);
 
         $status = $isDraft ? 'Draft' : 'Sent to ' . $approvalPath['current_approver'];
 
@@ -308,6 +314,22 @@ class DocumentApprovalController extends Controller
             'current_sequence_index' => 0,
             'updated_at' => now()
         ]);
+
+        if ($status !== 'Draft') {
+            $alreadyForwarded = DB::table('document_approval_forwardings')
+                ->where('doc_id', $document->id)
+                ->where('forwarded_to', $approvalPath['current_approver'])
+                ->exists();
+
+            if (!$alreadyForwarded) {
+                DB::table('document_approval_forwardings')->insert([
+                    'doc_id' => $document->id,
+                    'forwarded_by' => Auth::id(),
+                    'forwarded_to' => $approvalPath['current_approver'],
+                    'created_at' => now(),
+                ]);
+            }
+        }
 
         // Log the update
         $formattedUpdatedAt = now()->format('M d, Y g:ia');
@@ -393,6 +415,15 @@ public function changeDocumentStatus(Request $request)
             break;
         case 'Forward':
             $response = $this->handleForward($doc, $user, $request);
+            break;
+        case 'Consult Department':
+            $response = $this->handleConsultDepartment($doc, $user, $approvalSequence, $currentIndex, $request);
+            break;
+        case 'Acknowledge Consultation':
+            $response = $this->handleAcknowledgeConsultation($doc, $user, $approvalSequence, $currentIndex, $request);
+            break;
+        case 'Enter Amount':
+            $response = $this->handleEnterAmount($doc, $user, $approvalSequence, $currentIndex, $request);
             break;
         case 'Commented':
             $response = $this->handleComment($doc, $user, $request);
@@ -713,6 +744,12 @@ public function changeDocumentStatus(Request $request)
             return response()->json(['message' => 'Only the document creator or admin can close this document', 'status' => 'error']);
         }
 
+        // Closing wraps up a finished approval flow - a document can't be closed while it's
+        // still awaiting someone's action.
+        if ($doc->status !== 'Completed') {
+            return response()->json(['message' => 'This document can only be closed after its approval flow is completed.', 'status' => 'error']);
+        }
+
         $doc->update([
             'approval_status' => 'Closed by ' . $user->name,
             'status' => 'Closed',
@@ -794,9 +831,17 @@ public function changeDocumentStatus(Request $request)
             'message' => 'required|string',
         ]);
 
+        // forward_to can be a comma-separated list when multiple departments are picked in the
+        // dept-suggestions.blade.php tag-select UI. `to`/`forwarded_to` keep the joined string
+        // for display (the UI already parses it back out with explode(', ', ...) to render tags),
+        // but every downstream match (access control, "sent/forwarded to you" listings,
+        // per-department notifications) goes through document_approval_forwardings, so each
+        // department needs its own row there rather than one row holding the whole joined string.
         $forwardTo = $request->input('forward_to');
+        $departments = array_filter(array_map('trim', explode(',', $forwardTo)));
+
         $approval_status = "Forwarded to " . $forwardTo . " by " . $user->department;
-        
+
         $doc->update([
             'approval_status' => $approval_status,
             'status' => "Sent to " . $forwardTo,
@@ -804,23 +849,230 @@ public function changeDocumentStatus(Request $request)
             'to' => $forwardTo,
             'updated_at' => now()
         ]);
-        
-        // Add to forwarding table
-        DB::table('document_approval_forwardings')->insert([
-            'doc_id' => $doc->id,
-            'forwarded_by' => Auth::id(),
-            'forwarded_to' => $forwardTo,
-            'created_at' => now()
-        ]);
-        
+
+        foreach ($departments as $dept) {
+            $alreadyForwarded = DB::table('document_approval_forwardings')
+                ->where('doc_id', $doc->id)
+                ->where('forwarded_to', $dept)
+                ->exists();
+
+            if (!$alreadyForwarded) {
+                DB::table('document_approval_forwardings')->insert([
+                    'doc_id' => $doc->id,
+                    'forwarded_by' => Auth::id(),
+                    'forwarded_to' => $dept,
+                    'created_at' => now()
+                ]);
+            }
+
+            $this->sendNotificationToDepartment($dept, $doc, "A document has been forwarded to you by " . $user->department);
+        }
+
         $log_description = "Document forwarded to " . $forwardTo . " by " . $user->department;
         $this->logApprovalAction($doc, $approval_status, $log_description, $request->input('message'));
-        
-        // Notify the forwarded department
-        $this->sendNotificationToDepartment($forwardTo, $doc, "A document has been forwarded to you by " . $user->department);
+
         $this->sendNotificationToUser($doc->by, $doc, "Your document has been forwarded to " . $forwardTo);
-        
+
         return response()->json(['message' => 'Document Forwarded', 'status' => 'success']);
+    }
+
+    /**
+     * Lets whoever currently holds a payment-involved document (a Purchase Officer, a
+     * consulted department HOD, or anyone else in the flow) fill in the amount when it
+     * wasn't known at creation time - the document is created with a default/placeholder
+     * amount so it never dead-ends, and this corrects the *remaining* route once the real
+     * figure is known, without touching whatever's already been approved.
+     *
+     * Finds where the payment-routing tail (Purchase Head/Finance Head or STB Office/
+     * Chairman/PA to Chairman) starts in the tracked sequence and replaces everything from
+     * there onward with the tail for the real amount. If the document had already moved
+     * past that point (e.g. sitting at Finance Head Salem under the low-value assumption),
+     * current_sequence_index is rewound to the start of the corrected tail and the document
+     * is re-routed to whichever department that tail now actually starts with.
+     */
+    private function handleEnterAmount($doc, $user, $approvalSequence, $currentIndex, $request)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:0',
+        ]);
+
+        if ($doc->is_payment_involved !== 'Y') {
+            return response()->json(['message' => 'This document does not involve payment.', 'status' => 'error']);
+        }
+
+        $newAmount = (float) $request->input('amount');
+
+        $tailStartIndex = null;
+        foreach ($approvalSequence as $idx => $dept) {
+            if (in_array($dept, ApprovalPathResolver::PAYMENT_TAIL_DEPARTMENTS, true)) {
+                $tailStartIndex = $idx;
+                break;
+            }
+        }
+        $tailStartIndex = $tailStartIndex ?? count($approvalSequence);
+
+        $correctTail = ApprovalPathResolver::paymentTail($newAmount, $doc->is_purchase);
+        $keptSequence = array_slice($approvalSequence, 0, $tailStartIndex);
+        $newSequence = array_values(array_merge($keptSequence, $correctTail));
+
+        // Only rewind if the document is currently somewhere inside the old tail - if it
+        // hasn't reached the payment-routing part yet, leave its position untouched.
+        $newIndex = $currentIndex >= $tailStartIndex ? $tailStartIndex : $currentIndex;
+        $rerouted = $newIndex !== $currentIndex;
+
+        $updateData = [
+            'amount' => $newAmount,
+            'approval_sequence' => json_encode($newSequence),
+            'current_sequence_index' => $newIndex,
+            'updated_at' => now(),
+        ];
+
+        $newApprover = $newSequence[$newIndex] ?? null;
+
+        if ($rerouted && $newApprover) {
+            $updateData['to'] = $newApprover;
+            $updateData['forwarded_to'] = $newApprover;
+            $updateData['status'] = 'Sent to ' . $newApprover;
+
+            DB::table('document_approval_forwardings')->insertOrIgnore([
+                'doc_id' => $doc->id,
+                'forwarded_by' => Auth::id(),
+                'forwarded_to' => $newApprover,
+                'created_at' => now(),
+            ]);
+        }
+
+        $doc->update($updateData);
+
+        $log_message = $user->name . ' (' . $user->department . ') entered the payment amount: ₹' . number_format($newAmount, 2)
+            . '. ' . ($rerouted ? "Approval route updated — now routed to {$newApprover}." : 'Approval route confirmed.');
+        $this->logApprovalAction($doc, $doc->approval_status ?? $doc->status, $log_message, $request->input('message', $log_message));
+
+        if ($rerouted && $newApprover) {
+            $this->sendNotificationToDepartment($newApprover, $doc, "A document has been routed to you after the payment amount was confirmed.");
+        }
+        $this->sendNotificationToUser($doc->by, $doc, "The payment amount for your document has been entered by " . $user->department . ".");
+
+        return response()->json(['message' => 'Amount entered and approval route updated', 'status' => 'success']);
+    }
+
+    /**
+     * Medical Director / General Manager sends an equipment-purchase document to another
+     * department (e.g. Biomedical) for consultation. Unlike the generic Forward action,
+     * this splices [consultDept, currentApprover] into the tracked approval_sequence right
+     * after the current step, so once the consulted department approves, the existing
+     * sequence-index machinery in handleApproval() naturally routes it back here for
+     * final sign-off before continuing on to Purchase Head / Finance Head.
+     */
+    private function handleConsultDepartment($doc, $user, $approvalSequence, $currentIndex, $request)
+    {
+        $request->validate([
+            'consult_department' => 'required|string',
+            'message' => 'required|string',
+        ]);
+
+        $currentApprover = $approvalSequence[$currentIndex] ?? null;
+
+        if (!in_array($currentApprover, ['Medical Director', 'General Manager'])) {
+            return response()->json([
+                'message' => 'Consulting another department is only available at the Medical Director / General Manager stage',
+                'status' => 'error',
+            ]);
+        }
+
+        $consultDept = $request->input('consult_department');
+
+        array_splice($approvalSequence, $currentIndex + 1, 0, [$consultDept, $currentApprover]);
+        $nextIndex = $currentIndex + 1;
+
+        $approval_status = "Sent to " . $consultDept . " for consultation by " . $user->department;
+
+        $doc->update([
+            'approval_status' => $approval_status,
+            'status' => "Sent to " . $consultDept,
+            'forwarded_to' => $consultDept,
+            'to' => $consultDept,
+            'approval_sequence' => json_encode($approvalSequence),
+            'current_sequence_index' => $nextIndex,
+            'consult_department' => $consultDept,
+            'updated_at' => now(),
+        ]);
+
+        DB::table('document_approval_forwardings')->insertOrIgnore([
+            'doc_id' => $doc->id,
+            'forwarded_by' => Auth::id(),
+            'forwarded_to' => $consultDept,
+            'created_at' => now(),
+        ]);
+
+        $log_message = "Document sent to " . $consultDept . " for consultation by " . $user->department
+            . " (will return to " . $currentApprover . " for final sign-off)";
+        $this->logApprovalAction($doc, $approval_status, $log_message, $request->input('message', $log_message));
+
+        $this->sendNotificationToDepartment($consultDept, $doc, "A document has been sent to you for consultation by " . $user->department);
+        $this->sendNotificationToUser($doc->by, $doc, "Your document has been sent to " . $consultDept . " for consultation");
+
+        return response()->json(['message' => 'Document Sent for Consultation', 'status' => 'success']);
+    }
+
+    /**
+     * The department consulted via "Consult Department" isn't a real approver for this
+     * document - they're just being asked for remarks - so they get Acknowledge instead of
+     * Approve/Reject/etc. Acknowledging advances the sequence exactly like an approval would
+     * (returning to whoever raised the consult, per the [consultDept, originalApprover] splice
+     * in handleConsultDepartment()), but is logged as an acknowledgement, not an approval
+     * decision, and clears consult_department so the raiser's full action set - Approve,
+     * Reject, Consult Department again, etc. - is restored once it's back with them.
+     */
+    private function handleAcknowledgeConsultation($doc, $user, $approvalSequence, $currentIndex, $request)
+    {
+        $currentApprover = $approvalSequence[$currentIndex] ?? null;
+
+        if ($doc->consult_department !== $user->department || $currentApprover !== $user->department) {
+            return response()->json([
+                'message' => 'There is no consultation request awaiting your acknowledgement on this document.',
+                'status' => 'error',
+            ]);
+        }
+
+        $nextIndex = $currentIndex + 1;
+        $approval_status = "Acknowledged by " . $user->department;
+
+        if ($nextIndex >= count($approvalSequence)) {
+            // Shouldn't normally happen (a consult splice always has the raiser after it), but
+            // guard against a malformed sequence completing the document outright.
+            $doc->update([
+                'approval_status' => $approval_status,
+                'status' => 'Completed',
+                'forwarded_to' => $doc->from,
+                'current_sequence_index' => $nextIndex,
+                'consult_department' => null,
+                'updated_at' => now(),
+            ]);
+            $this->sendNotificationToUser($doc->by, $doc, "Your document has been fully approved and completed.");
+        } else {
+            $nextApprover = $approvalSequence[$nextIndex];
+
+            $doc->update([
+                'approval_status' => $approval_status,
+                'status' => "Sent to " . $nextApprover,
+                'forwarded_to' => $nextApprover,
+                'to' => $nextApprover,
+                'current_sequence_index' => $nextIndex,
+                'consult_department' => null,
+                'updated_at' => now(),
+            ]);
+
+            $this->sendNotificationToDepartment($nextApprover, $doc, $user->department . " has acknowledged your consultation request. Please review and proceed.");
+        }
+
+        $log_message = $user->department . " acknowledged the consultation request"
+            . ($request->input('message') ? ': ' . $request->input('message') : '.');
+        $this->logApprovalAction($doc, $approval_status, $log_message, $request->input('message', $log_message));
+
+        $this->sendNotificationToUser($doc->by, $doc, "Your document has been acknowledged by " . $user->department . " and returned for review.");
+
+        return response()->json(['message' => 'Consultation Acknowledged', 'status' => 'success']);
     }
 
     private function handleComment($doc, $user, $request)
@@ -835,23 +1087,31 @@ public function changeDocumentStatus(Request $request)
         $log_description = "Comment added by <b>" . $user->department . "</b>";
         $this->logApprovalAction($doc, $approval_status, $log_description, $request->input('message'));
         
-        // Handle file upload in comment
-        if ($request->file('file')) {
+        // Handle file upload(s) in comment - supports multiple files via files[], and still
+        // accepts the older single 'file' field for any callers still using it (e.g. mobile).
+        $uploadedFiles = $request->file('files', $request->file('file'));
+        if ($uploadedFiles) {
             $year = date('Y');
             $month = date('m');
             $folderPath = "uploads/{$year}/{$month}";
-            
-            $originalFileName = $request->file('file')->getClientOriginalName();
-            $uniqueName = pathinfo($originalFileName, PATHINFO_FILENAME) . '-' . uniqid() . '.' . $request->file('file')->getClientOriginalExtension();
-            $filePath = "{$folderPath}/{$uniqueName}";
-            
-            $request->file('file')->storeAs($folderPath, $uniqueName, 'public');
-            
-            DB::table('document_annexures')->insert([
-                'doc_id' => $doc->id,
-                'annexure' => $filePath,
-                'created_at' => now()
-            ]);
+
+            foreach (Arr::wrap($uploadedFiles) as $uploadedFile) {
+                if (!$uploadedFile) {
+                    continue;
+                }
+
+                $originalFileName = $uploadedFile->getClientOriginalName();
+                $uniqueName = pathinfo($originalFileName, PATHINFO_FILENAME) . '-' . uniqid() . '.' . $uploadedFile->getClientOriginalExtension();
+                $filePath = "{$folderPath}/{$uniqueName}";
+
+                $uploadedFile->storeAs($folderPath, $uniqueName, 'public');
+
+                DB::table('document_annexures')->insert([
+                    'doc_id' => $doc->id,
+                    'annexure' => $filePath,
+                    'created_at' => now()
+                ]);
+            }
         }
         
         $this->sendNotificationToUser($doc->by, $doc, "A comment has been added to your document by " . $user->department);
@@ -1152,12 +1412,7 @@ public function changeDocumentStatus(Request $request)
             $hasAccess = true;
         }
         
-        // 5. SuperAdmin has access to all
-        if ($user->role == 'SuperAdmin') {
-            $hasAccess = true;
-        }
-        
-        // 6. Check if user is in the approval sequence
+        // 5. Check if user is in the approval sequence
         $approvalSequence = json_decode($doc->approval_sequence, true) ?? [];
         if (in_array($user->department, $approvalSequence)) {
             $hasAccess = true;
@@ -1243,11 +1498,22 @@ public function changeDocumentStatus(Request $request)
             $sortBy = 'created_at';
         }
         
-        $query = DocumentApproval::where('to', Auth::user()->department)
+        // "Sent to you" covers documents currently awaiting this department AND documents that
+        // were sent here at some earlier stage and have since moved on (e.g. after this
+        // department approved it) - the live `to` column only reflects the current stage, so it
+        // alone would make approved documents disappear from the list once they move forward.
+        $forwardedDocIds = DB::table('document_approval_forwardings')
+            ->where('forwarded_to', Auth::user()->department)
+            ->pluck('doc_id');
+
+        $query = DocumentApproval::where(function ($q) use ($forwardedDocIds) {
+                $q->where('to', Auth::user()->department)
+                  ->orWhereIn('id', $forwardedDocIds);
+            })
             ->whereNotIn('status', ['Draft']);
-        
+
         $docs = $query->orderBy($sortBy, $sortDir)->paginate(10)->appends($request->query());
-        
+
         return view('frontend.document.received_doc', compact('activeMenu', 'activeDropdown', 'docs', 'departments'));
     }
     
@@ -1469,15 +1735,24 @@ public function changeDocumentStatus(Request $request)
         return redirect()->back()->with('success', 'Status updated successfully');
     }
     
-    // Search departments (for AJAX)
+    // Search departments (for AJAX) - includes the department's HOD name for the
+    // forward-to autocomplete so staff can see who they're actually forwarding to.
     public function searchDepartments(Request $request)
     {
         $query = $request->get('query');
-        $departments = Department::where('dept_label', 'like', "%{$query}%")
+        $departments = Department::with('head')
+            ->where('dept_label', 'like', "%{$query}%")
             ->orWhere('dept_name', 'like', "%{$query}%")
             ->limit(10)
-            ->get(['dept_label', 'dept_name']);
-        
+            ->get(['dept_label', 'dept_name'])
+            ->map(function ($dept) {
+                return [
+                    'dept_label' => $dept->dept_label,
+                    'dept_name' => $dept->dept_name,
+                    'head_name' => optional($dept->head)->name ?? 'No HOD assigned',
+                ];
+            });
+
         return response()->json($departments);
     }
     
@@ -1550,7 +1825,7 @@ public function changeDocumentStatus(Request $request)
         
         if ($request->filled('doc_id')) {
             $docId = str_pad($request->doc_id, 4, '0', STR_PAD_LEFT);
-            $query->where('doc_id', 'like', 'REG-DOC-' . $docId);
+            $query->where('doc_id', 'like', 'VIMS-DOC-' . $docId);
         }
         
         if ($request->filled('section')) {
@@ -1594,7 +1869,25 @@ public function changeDocumentStatus(Request $request)
         
         // Role-based filtering
         if (Auth::user()->role == 'SuperAdmin') {
-            $query->whereNotIn('status', ['Draft']);
+            // Sequential confidentiality: a SuperAdmin approver further along the chain (e.g.
+            // Medical Director when the flow starts at General Manager) must not see a document
+            // in this list until it has actually reached their department - creator, currently
+            // at their stage, ever forwarded to them, or already acted on by their department.
+            $userDept = Auth::user()->department;
+            $forwardedDocIds = DB::table('document_approval_forwardings')
+                ->where('forwarded_to', $userDept)
+                ->pluck('doc_id');
+            $actedDocIds = DB::table('approval_log')
+                ->join('users', 'approval_log.by', '=', 'users.id')
+                ->where('users.department', $userDept)
+                ->pluck('approval_log.doc_id');
+
+            $query->where(function ($q) use ($userDept, $forwardedDocIds, $actedDocIds) {
+                $q->where('by', Auth::id())
+                  ->orWhere('to', $userDept)
+                  ->orWhereIn('id', $forwardedDocIds)
+                  ->orWhereIn('id', $actedDocIds);
+            })->whereNotIn('status', ['Draft']);
         } elseif (Auth::user()->designation == 'Registrar') {
             $query->where('to', Auth::user()->department)
                   ->whereNotIn('status', ['Draft']);
@@ -1616,7 +1909,7 @@ public function changeDocumentStatus(Request $request)
         
         if ($request->filled('doc_id')) {
             $docId = str_pad($request->doc_id, 4, '0', STR_PAD_LEFT);
-            $query->where('doc_id', 'like', 'REG-DOC-' . $docId);
+            $query->where('doc_id', 'like', 'VIMS-DOC-' . $docId);
         }
         
         if ($request->filled('section')) {
@@ -1684,7 +1977,7 @@ public function changeDocumentStatus(Request $request)
         
         if ($request->filled('doc_id')) {
             $docId = str_pad($request->doc_id, 4, '0', STR_PAD_LEFT);
-            $query->where('doc_id', 'like', 'REG-DOC-' . $docId);
+            $query->where('doc_id', 'like', 'VIMS-DOC-' . $docId);
         }
 
         if ($request->filled('section')) {
@@ -1748,7 +2041,7 @@ public function changeDocumentStatus(Request $request)
         
         if ($request->filled('doc_id')) {
             $docId = str_pad($request->doc_id, 4, '0', STR_PAD_LEFT);
-            $query->where('doc_id', 'like', 'REG-DOC-' . $docId);
+            $query->where('doc_id', 'like', 'VIMS-DOC-' . $docId);
         }
         
         if ($request->filled('section')) {
@@ -1924,64 +2217,64 @@ public function changeDocumentStatus(Request $request)
     /**
      * Delete document
      */
-    public function deleteDocument(Request $request)
+    /**
+     * IT Admin-only document deletion. A reason is mandatory - logged to document_logs/
+     * approval_log and included in the notification/email sent to the creator, so there's
+     * always an audit trail for why a document was removed.
+     *
+     * Note: this is reached via a direct browser navigation (window.location.href from
+     * handleConfirmYes() in bootstrap-modal.js), not AJAX, so it must issue a real redirect
+     * rather than a JSON response.
+     */
+    public function deleteDocument(Request $request, $doc_id)
     {
-        $doc = DocumentApproval::findOrFail($request->input('doc_id'));
-        
-        if (Auth::id() == 139) {
-            $doc->update([
-                'approval_status' => 'Deleted by Admin',
-                'status' => 'Deleted by Admin',
-                'updated_at' => now()
-            ]);
-            
-            $createdAt = Carbon::parse($doc->updated_at);
-            $formattedCreatedAt = $createdAt->format('M d, Y g:ia');
-            
-            $log_description = "Document deleted by admin";
-            
-            DB::table('document_logs')->insert([
-                'doc_id' => $doc->id,
-                'description' => $log_description,
-                'created_at' => now()
-            ]);
-            
-            $message = $request->input('message');
-            $clean_message = trim(strip_tags($message));
-            $log_message = $clean_message === '' ? $log_description : $message;
-            
-            DB::table('approval_log')->insert([
-                'doc_id' => $doc->id,
-                'status' => $log_description,
-                'message' => $log_message,
-                'by' => Auth::id(),
-                'created_at' => now()
-            ]);
-            
-            $notificationController = new notificationController();
-            $notificationController->notificationEntry($doc->by, 'document', $doc->id, 'Your document titled <b>' . $doc->title . '</b> was <b> deleted by admin</b>');
-            
-            $email_to = User::find($doc->by);
-            $mail_details['content'] = 'Your Request was deleted at ' . now()->format('M d, Y g:ia') . '<br><br>ID - <b><i>' . $doc->doc_id . '</i></b><br>Titled - <b><i>' . $doc->title . '</i></b>';
-            $mail_details['url'] = URL::to('view/document/' . $doc->id);
-            $mail_details['title'] = 'Request deleted';
-            $subject = 'Status Update - ' . $doc->doc_id . ': ' . $doc->title;
-            
-            SendTicketNotificationMail::dispatch($email_to, $mail_details, $subject, 'frontend.email.document_notifications');
-            
-            $doc->delete();
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Document deleted successfully.',
-                'redirect' => route('deleted_documents')
-            ]);
-        } else {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Denied: Contact ICT'
+        $doc = DocumentApproval::findOrFail($doc_id);
+
+        if ((Auth::user()->role ?? null) !== 'ITAdmin') {
+            return redirect()->back()->with([
+                'message' => 'Denied: Only IT Admin can delete documents.',
+                'alert-type' => 'error',
             ]);
         }
+
+        $reason = trim(strip_tags((string) $request->input('reason')));
+        if ($reason === '') {
+            return redirect()->back()->with([
+                'message' => 'A reason is required to delete a document.',
+                'alert-type' => 'error',
+            ]);
+        }
+
+        $doc->update([
+            'approval_status' => 'Deleted by Admin',
+            'status' => 'Deleted by Admin',
+            'updated_at' => now(),
+        ]);
+
+        $log_description = "Document deleted by <b>" . Auth::user()->name . "</b> (IT Admin). Reason: " . e($reason);
+
+        DB::table('document_logs')->insert([
+            'doc_id' => $doc->id,
+            'description' => $log_description,
+            'created_at' => now(),
+        ]);
+
+        DB::table('approval_log')->insert([
+            'doc_id' => $doc->id,
+            'status' => 'Deleted by Admin',
+            'message' => $reason,
+            'by' => Auth::id(),
+            'created_at' => now(),
+        ]);
+
+        $this->sendNotificationToUser($doc->by, $doc, 'Your document was deleted by IT Admin. Reason: ' . e($reason));
+
+        $doc->delete();
+
+        return redirect()->route('deleted_documents')->with([
+            'message' => 'Document deleted successfully.',
+            'alert-type' => 'success',
+        ]);
     }
 
     /**
@@ -2013,15 +2306,48 @@ public function changeDocumentStatus(Request $request)
     /**
      * Get report documents
      */
-    public function reportDoc()
+    public function reportDoc(Request $request)
     {
         $activeMenu = "report-doc";
         $activeDropdown = "";
-        
+
         $departments = Department::orderBy('dept_name', 'asc')->get();
-        
-        $docs = DocumentApproval::where('status', '!=', 'Draft')->latest()->get();
-        
+
+        $query = DocumentApproval::where('status', '!=', 'Draft');
+
+        if ($request->filled('doc_id')) {
+            $query->where('doc_id', 'like', '%' . $request->doc_id . '%');
+        }
+        if ($request->filled('title')) {
+            $query->where('title', 'like', '%' . $request->title . '%');
+        }
+        if ($request->filled('section')) {
+            $query->where('from', $request->section);
+        }
+        if ($request->filled('status')) {
+            // "Pending"/"Approved" are category filters, not literal status column values
+            // (which read like "Sent to Medical Director") - Completed/Closed/Rejected are
+            // literal values and match directly.
+            switch ($request->status) {
+                case 'Pending':
+                    $query->where('status', 'like', 'Sent to%');
+                    break;
+                case 'Approved':
+                    $query->where('approval_status', 'like', 'Approved by%');
+                    break;
+                default:
+                    $query->where('status', $request->status);
+            }
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
+        }
+
+        $docs = $query->latest()->paginate(10)->appends($request->query());
+
         return view('frontend.document.report', compact('docs', 'activeMenu', 'activeDropdown', 'departments'));
     }
 
@@ -2043,8 +2369,21 @@ public function changeDocumentStatus(Request $request)
             ->groupBy('doc_id');
         
         $pdf = PDF::loadView('frontend.document.download.report_template', compact('docs', 'approvalLogs'));
-        
+
         return $pdf->download('Document_Report.pdf');
+    }
+
+    /**
+     * Download report as Excel
+     */
+    public function downloadReportExcel()
+    {
+        $docs = DocumentApproval::where('from', Auth::user()->department)
+            ->whereNotIn('status', ['Draft', 'Closed'])
+            ->latest()
+            ->get();
+
+        return Excel::download(new \App\Exports\DocumentReportExport($docs), 'Document_Report.xlsx');
     }
 
     /**
@@ -2285,7 +2624,7 @@ public function changeDocumentStatus(Request $request)
 
         if ($request->filled('doc_id')) {
             $docId = str_pad($request->doc_id, 4, '0', STR_PAD_LEFT);
-            $query->where('document_approvals.doc_id', 'like', 'REG-DOC-' . $docId);
+            $query->where('document_approvals.doc_id', 'like', 'VIMS-DOC-' . $docId);
         }
 
         if ($request->filled('status') && in_array($request->status, ['Completed', 'Closed'])) {
@@ -2356,12 +2695,16 @@ public function changeDocumentStatus(Request $request)
             $sortBy = 'created_at';
         }
         
+        // Departments keep this document listed after it's fully approved/closed - it was
+        // legitimately forwarded to them at some stage, and they should still be able to see
+        // its final status, read the full comment/approval history, and add a comment at any
+        // time, not just while it was still awaiting someone's action.
         $docsQuery = DocumentApprovalForwardings::query()
             ->select('document_approval_forwardings.*')
             ->distinct()
             ->join('document_approvals', 'document_approvals.id', '=', 'document_approval_forwardings.doc_id')
             ->where('document_approval_forwardings.forwarded_to', Auth::user()->department)
-            ->whereNotIn('document_approvals.status', ['Closed', 'Completed', 'Draft'])
+            ->whereNotIn('document_approvals.status', ['Draft'])
             ->select(
                 'document_approval_forwardings.*',
                 'document_approvals.title',

@@ -62,7 +62,54 @@ class DepartmentController extends Controller
 
         $depts = Department::all();
 
-        return view('frontend.admin.depts.view-depts', compact('activeMenu', 'activeDropdown', 'depts'));
+        // Real department names already in use (from the users table) that don't have a
+        // matching departments row yet - the department search/forward-to autocomplete, etc.
+        // all read from this table, so an unlinked department silently can't be found there.
+        $existingLabels = $depts->pluck('dept_label')->filter()->all();
+        $missingDepartments = User::whereNotNull('department')
+            ->where('department', '!=', '')
+            ->whereNotIn('department', $existingLabels)
+            ->distinct()
+            ->orderBy('department')
+            ->pluck('department');
+
+        return view('frontend.admin.depts.view-depts', compact('activeMenu', 'activeDropdown', 'depts', 'missingDepartments'));
+    }
+
+    /**
+     * One-click add for a department name that's already in use on the users table but has
+     * no matching departments row - avoids the tedium of copying the name into the full
+     * add-department form field by field.
+     */
+    public function quickAddDept(Request $request)
+    {
+        $request->validate([
+            'department_name' => 'required|string|max:255',
+        ]);
+
+        $name = trim($request->department_name);
+
+        if (Department::where('dept_label', $name)->exists()) {
+            return redirect()->route('view-depts')->with([
+                'message' => 'That department already exists.',
+                'alert-type' => 'error',
+            ]);
+        }
+
+        $randomNumber = mt_rand(1000, 9999);
+        $dept_id = 'DPT-' . str_pad($randomNumber, 4, '0', STR_PAD_LEFT);
+
+        Department::create([
+            'dept_id' => $dept_id,
+            'dept_name' => $name,
+            'dept_label' => $name,
+            'is_active' => true,
+        ]);
+
+        return redirect()->route('view-depts')->with([
+            'message' => 'Department "' . $name . '" added.',
+            'alert-type' => 'success',
+        ]);
     }
 
     public function editDept($id){

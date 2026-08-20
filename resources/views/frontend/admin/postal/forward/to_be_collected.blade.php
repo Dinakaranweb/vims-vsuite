@@ -52,13 +52,7 @@
                                             <tr>
                                                 <th>S.No</th>
                                                 <th>Post ID</th>
-                                                @if(Auth::user()->department == 'DDE Admission & Finance' || Auth::user()->department == 'DDE Examination')
-                                                <th>Student Name</th>
-                                                <th>Reg No</th>
-                                                <th>Category</th>
-                                                @else
                                                 <th>From</th>
-                                                @endif
                                                 <th>Status</th>
                                                 <th>Collect</th>
                                                 <th>Dispatched by</th>
@@ -85,26 +79,9 @@
                                                         @php
                                                             $forwarded_by = App\Models\User::find($post->forwarded_by);
                                                         @endphp
-                                                    @if(Auth::user()->department == 'DDE Admission & Finance' || Auth::user()->department == 'DDE Examination')
-                                                    
-                                                    @php
-                                                        $ddeDetails = App\Models\DdeDetails::where('post_id', $post_id->id)->first();
-                                                    @endphp
-                                                    <td>
-                                                        <a class="font-weight-600">{{ $ddeDetails->student_name ?? '' }}</a>
-                                                    </td>
-                                                    <td>
-                                                        <a class="font-weight-600">{{ $ddeDetails->reg_no ?? '' }}</a>
-                                                    </td>
-                                                    <td>
-                                                        {{ $post_id->category }}
-                                                    </td>
-                                                    
-                                                    @else
-                                                    <td>
+                                                                    <td>
                                                         <a class="font-weight-600">{{ $post_id->sent_by }}</a>
                                                     </td>
-                                                    @endif
                                                     
                                                     <td class="postal-status">
                                                         {{ $post->status }}

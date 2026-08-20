@@ -727,14 +727,22 @@
                         $('#pathDescription').html(getPathDescription());
                         previewDiv.show();
                         
-                        // Add payment routing info to hint
+                        // Rebuild the hint from scratch every time instead of reading-and-appending
+                        // to its current contents - appending onto the live DOM value caused a new
+                        // duplicate payment line to pile up on every keystroke in the amount field.
+                        let baseHint = userDivision === 'Clinical'
+                            ? '🏥 Clinical department: Document will automatically route to Medical Director first, then to General Manager.'
+                            : '📋 Non-Clinical department: Document will automatically route to General Manager first, then to Medical Director.';
+
                         if (isPaymentInvolved) {
                             if (amount > 200000) {
-                                $('#pathHint').html($('#pathHint').html() + '<br><span class="text-warning">⚠️ High Value Amount: Will route through STB Office → Chairman → Finance Head Salem</span>');
+                                baseHint += '<br><span class="text-warning">⚠️ High Value Amount: Will route through STB Office → Chairman → Finance Head Salem</span>';
                             } else if (amount > 0) {
-                                $('#pathHint').html($('#pathHint').html() + '<br><span class="text-info">💰 Payment Involved: Will route through Finance Head Salem</span>');
+                                baseHint += '<br><span class="text-info">💰 Payment Involved: Will route through Finance Head Salem</span>';
                             }
                         }
+
+                        $('#pathHint').html(baseHint);
                         
                         // Update summary
                         $('#summary-approval-path').text(path.join(' → '));
