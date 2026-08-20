@@ -23,6 +23,48 @@
           <div class="section-body">
             <h2 class="section-title">Departments</h2>
 
+            @if(session('message'))
+                <div class="alert alert-{{ session('alert-type') == 'success' ? 'success' : 'danger' }}">
+                    {{ session('message') }}
+                </div>
+            @endif
+
+            @if($missingDepartments->isNotEmpty())
+            <div class="row">
+                <div class="col-lg-12 col-md-12 col-12 col-sm-12">
+                    <div class="card" style="border: 1px solid #ffc107;">
+                        <div class="card-header" style="background: #fff8e1;">
+                            <h4><i class="fas fa-exclamation-triangle text-warning"></i> Departments Missing From This List</h4>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted">
+                                These department names are already used by real users but don't have a department record yet -
+                                without one, they won't show up in department search/forward-to pickers elsewhere in the app.
+                            </p>
+                            <table class="table table-sm">
+                                <tbody>
+                                    @foreach($missingDepartments as $deptName)
+                                        <tr>
+                                            <td class="align-middle">{{ $deptName }}</td>
+                                            <td class="text-right">
+                                                <form method="POST" action="{{ route('quick-add-dept') }}" class="d-inline">
+                                                    @csrf
+                                                    <input type="hidden" name="department_name" value="{{ $deptName }}">
+                                                    <button type="submit" class="btn btn-sm btn-success">
+                                                        <i class="fas fa-plus"></i> Add
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            @endif
+
             <div class="row">
                 <div class="col-lg-12 col-md-12 col-12 col-sm-12">
                     <div class="card">

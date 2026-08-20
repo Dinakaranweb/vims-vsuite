@@ -4,11 +4,14 @@
       <ul class="navbar-nav mr-3">
         <li><a href="#" data-toggle="sidebar" class="nav-link nav-link-lg"><i class="fas fa-bars"></i></a></li>
       </ul>
+
       <!-- VIMS-VSuite Title -->
-      <span class="navbar-brand mb-0 h1 vsuite-navbar-title">
-        <i class="fas fa-gem text-warning" style="margin-right: 6px;"></i>
-        VIMS-VSuite
+      <span class="navbar-brand mb-0 h1 vsuite-navbar-title" style="display: flex; align-items: center; gap: 8px;">
+        <img src="{{ asset('assets/img/vm/icon.jpg') }}" alt="V-Suite Logo" class="brand-logo" style="height: 40px; width: auto; max-width: 160px; object-fit: contain;">
+        <i class="fas fa-gem text-warning"></i>
+        VSuite
       </span>
+      
     </form>
     <ul class="navbar-nav navbar-right">
       @if($unread > 0)

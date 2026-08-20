@@ -22,6 +22,7 @@ use App\Http\Controllers\ChairmanController;
 use App\Http\Controllers\UnifiedDashboardController;
 use App\Http\Controllers\DocumentDashboardController;
 use App\Http\Controllers\ApiTokenController;
+use App\Http\Controllers\ItAdminUserController;
 use App\Http\Controllers\CrossLoginController;
 
 Route::get('/', function () {
@@ -147,6 +148,7 @@ Route::middleware(['auth', 'hod'])->group(function (){
     Route::get('/admin/add/depts', [DepartmentController::class, 'addDepts'])->name('add-depts');
     Route::post('/admin/store/depts', [DepartmentController::class, 'storeDepts'])->name('store-depts');
     Route::get('/admin/view/depts', [DepartmentController::class, 'viewDepts'])->name('view-depts');
+    Route::post('/admin/depts/quick-add', [DepartmentController::class, 'quickAddDept'])->name('quick-add-dept');
     Route::get('/admin/view/ex/depts', [DepartmentController::class, 'exDepts'])->name('ex-depts');
     Route::get('/admin/edit/depts/{id}', [DepartmentController::class, 'editDept'])->name('edit-dept');
     Route::post('/admin/update/depts', [DepartmentController::class, 'updateDept'])->name('update-dept');
@@ -171,6 +173,13 @@ Route::middleware(['auth', 'itadmin'])->group(function () {
     Route::get('/itadmin/api/tokens', [ApiTokenController::class, 'index'])->name('api.tokens.index');
     Route::post('/itadmin/api/tokens', [ApiTokenController::class, 'store'])->name('api.tokens.store');
     Route::delete('/itadmin/api/tokens/{id}', [ApiTokenController::class, 'destroy'])->name('api.tokens.destroy');
+
+    Route::get('/itadmin/users', [ItAdminUserController::class, 'index'])->name('itadmin.users.index');
+    Route::get('/itadmin/users/create', [ItAdminUserController::class, 'create'])->name('itadmin.users.create');
+    Route::post('/itadmin/users', [ItAdminUserController::class, 'store'])->name('itadmin.users.store');
+    Route::get('/itadmin/users/{id}/edit', [ItAdminUserController::class, 'edit'])->name('itadmin.users.edit');
+    Route::put('/itadmin/users/{id}', [ItAdminUserController::class, 'update'])->name('itadmin.users.update');
+    Route::delete('/itadmin/users/{id}', [ItAdminUserController::class, 'destroy'])->name('itadmin.users.destroy');
 });
 
 Route::middleware(['auth', 'admin'])->group(function (){
@@ -407,6 +416,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/admin/download/document/{doc_id}', [DocumentApprovalController::class, 'downloadDocument'])->name('download_document');
     Route::get('/admin/download/report/', [DocumentApprovalController::class, 'downloadReport'])->name('download_report_doc');
+    Route::get('/admin/download/report/excel', [DocumentApprovalController::class, 'downloadReportExcel'])->name('download_report_excel');
     Route::get('/admin/download/forwardedDoc/report/', [DocumentApprovalController::class, 'downloadForwardedDocReport'])->name('download_report_forwarded_doc');
 
     Route::get('/forwarded/post', [HODController::class, 'forwardedPosts'])->name('admin_forwarded_post');
@@ -429,7 +439,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/superadmin/documents/rejected', [DocumentApprovalController::class, 'rejectedDocuments'])->name('rejected_documents');
     Route::get('/superadmin/documents/closed', [DocumentApprovalController::class, 'closedDocuments'])->name('closed_documents');
     Route::get('/superadmin/documents/approved', [DocumentApprovalController::class, 'approvedDocuments'])->name('approved_documents');
-    Route::post('/delete/document/', [DocumentApprovalController::class, 'DeleteDocument'])->name('delete_document');
+    Route::get('/delete/document/{doc_id}', [DocumentApprovalController::class, 'deleteDocument'])->name('delete_document');
     Route::get('/deleted/document/admin/deep', [DocumentApprovalController::class, 'deletedDocuments'])->name('deleted_documents');
     
     Route::get('/admin/document/create/{ticket_id?}', [DocumentApprovalController::class, 'create'])->name('create_document');

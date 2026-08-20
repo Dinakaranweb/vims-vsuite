@@ -881,7 +881,7 @@ class DocumentApiController extends Controller
         $sequence     = $approvalPath['sequence'];
         $firstApprover = $approvalPath['current_approver'];
 
-        // Same REG-DOC-NNNN series the web app uses — not a separate scheme,
+        // Same VIMS-DOC-NNNN series the web app uses — not a separate scheme,
         // so document numbers stay continuous regardless of which client
         // created them.
         $docId = DocumentApproval::nextDocId();

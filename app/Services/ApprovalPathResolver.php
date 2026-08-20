@@ -46,26 +46,51 @@ class ApprovalPathResolver
         $sequence = array_values(array_unique($sequence));
 
         if ($isPaymentInvolved === 'Y') {
-            if ($amount > 200000) {
-                // High value (>2 Lakhs) — STB Office → Chairman → PA to Chairman (selects Finance Head)
-                $sequence[] = 'STB Office';
-                $sequence[] = 'Chairman';
-                if ($isPurchase === 'Y') {
-                    $sequence[] = 'Purchase Head Chennai';
-                }
-                $sequence[] = 'PA to Chairman';
-            } else {
-                // ≤2 Lakhs — go directly to Finance Head Salem (no PA step)
-                if ($isPurchase === 'Y') {
-                    $sequence[] = 'Purchase Head';
-                }
-                $sequence[] = 'Finance Head Salem';
-            }
+            $sequence = array_merge($sequence, self::paymentTail($amount, $isPurchase));
         }
 
         return [
             'sequence'         => $sequence,
             'current_approver' => $sequence[0],
         ];
+    }
+
+    /**
+     * The department names that make up a payment-routing tail (as opposed to the
+     * Clinical/Non-Clinical Medical Director / General Manager chain that precedes it).
+     * Used by DocumentApprovalController::handleEnterAmount() to find where a document's
+     * existing tail starts, so it can be replaced once the real amount becomes known.
+     */
+    public const PAYMENT_TAIL_DEPARTMENTS = [
+        'STB Office', 'Chairman', 'Purchase Head', 'Purchase Head Chennai',
+        'PA to Chairman', 'Finance Head Salem',
+    ];
+
+    /**
+     * The payment-routing steps for a given amount/purchase flag, split out from resolve()
+     * so it can be recomputed later once a document's real amount becomes known (it's often
+     * unset/0 at creation time - see handleEnterAmount()).
+     *
+     * @return array<int, string>
+     */
+    public static function paymentTail(float $amount, string $isPurchase = 'N'): array
+    {
+        if ($amount > 200000) {
+            // High value (>2 Lakhs) — STB Office → Chairman → PA to Chairman (selects Finance Head)
+            $tail = ['STB Office', 'Chairman'];
+            if ($isPurchase === 'Y') {
+                $tail[] = 'Purchase Head Chennai';
+            }
+            $tail[] = 'PA to Chairman';
+        } else {
+            // ≤2 Lakhs — go directly to Finance Head Salem (no PA step)
+            $tail = [];
+            if ($isPurchase === 'Y') {
+                $tail[] = 'Purchase Head';
+            }
+            $tail[] = 'Finance Head Salem';
+        }
+
+        return $tail;
     }
 }

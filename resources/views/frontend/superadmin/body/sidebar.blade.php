@@ -62,8 +62,11 @@
           </ul>
         </li>
 
-        @if(in_array(Auth::user()->role ?? '', ['ITAdmin', 'SuperAdmin']))
+        @if((Auth::user()->role ?? '') === 'ITAdmin')
         <li class="menu-header" style="margin-top: 15px;">IT Administration</li>
+        <li class="{{ $activeMenu == 'itadmin_users' ? 'active' : '' }}">
+          <a class="nav-link" href="{{ route('itadmin.users.index') }}"><i class="fas fa-users-cog"></i><span>User Management</span></a>
+        </li>
         <li class="dropdown {{ $activeMenu == 'api' ? 'active' : '' }}">
           <a href="#" class="nav-link has-dropdown" data-toggle="dropdown">
             <i class="fas fa-key"></i> <span>API Management</span>

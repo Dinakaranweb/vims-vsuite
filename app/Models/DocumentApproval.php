@@ -50,21 +50,64 @@ class DocumentApproval extends Model
         'work_order',
         'approval_sequence',      // JSON field for approval path
         'current_sequence_index', // Current position in sequence
+        'consult_department',     // Department currently in a Consult Department (Acknowledge-only) slot
+        'completed_at',           // When status first became Completed
+        'closed_at',              // When the creator formally closed the document
     ];
-    
+
+    protected $casts = [
+        'completed_at' => 'datetime',
+        'closed_at' => 'datetime',
+    ];
+
     /**
-     * Next sequential doc_id in the shared REG-DOC-NNNN series — used by both
+     * Auto-stamp completed_at/closed_at the moment status actually transitions into
+     * Completed/Closed, regardless of which handler in DocumentApprovalController triggers it
+     * (there are several: handleApproval, handleChairmanApproval, handleSTBAcknowledge, the
+     * handleAcknowledgeConsultation edge case, ...). Doing this here instead of in each handler
+     * means "days to close" stays correct even if a future code path sets status='Completed'
+     * without anyone remembering to stamp the timestamp by hand.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $doc) {
+            if ($doc->isDirty('status')) {
+                if ($doc->status === 'Completed' && !$doc->completed_at) {
+                    $doc->completed_at = now();
+                }
+                if ($doc->status === 'Closed' && !$doc->closed_at) {
+                    $doc->closed_at = now();
+                }
+            }
+        });
+    }
+
+    /**
+     * Whole days between the flow completing and the document being closed - or, if not
+     * closed yet, days completed and still awaiting closure. Null until the flow completes.
+     */
+    public function getDaysToCloseAttribute(): ?int
+    {
+        if (!$this->completed_at) {
+            return null;
+        }
+
+        return (int) $this->completed_at->diffInDays($this->closed_at ?? now());
+    }
+
+    /**
+     * Next sequential doc_id in the shared VIMS-DOC-NNNN series — used by both
      * the web and mobile create flows so numbering never forks into separate
      * series depending on which client created the document.
      */
     public static function nextDocId(): string
     {
         $maxDocNumber = static::where('doc_id', '!=', 'Draft')
-            ->selectRaw("MAX(CAST(SUBSTRING(doc_id, 9) AS UNSIGNED)) as max_number")
+            ->selectRaw("MAX(CAST(SUBSTRING(doc_id, 10) AS UNSIGNED)) as max_number")
             ->value('max_number');
         $lastNumber = $maxDocNumber ? intval($maxDocNumber) : 0;
 
-        return 'REG-DOC-' . str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+        return 'VIMS-DOC-' . str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
     }
 
     // ==================== Relationships ====================

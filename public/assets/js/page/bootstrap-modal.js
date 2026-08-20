@@ -1,5 +1,18 @@
 "use strict";
 
+// Global fallback for document-delete buttons (data-confirm-yes="handleConfirmYes(docId)").
+// A page can define its own handleConfirmYes() to override this, but most of the document
+// list pages never defined one at all, silently breaking the Delete button. Requires a
+// reason, matching DocumentApprovalController::deleteDocument()'s validation.
+if (typeof window.handleConfirmYes === 'undefined') {
+  window.handleConfirmYes = function(docId) {
+    var reason = prompt('Please enter a reason for deleting this document:');
+    if (reason === null) return;
+    if (!reason.trim()) { alert('A reason is required to delete a document.'); return; }
+    window.location.href = "/delete/document/" + docId + "?reason=" + encodeURIComponent(reason);
+  };
+}
+
 $("#modal-1").fireModal({body: 'Modal body text goes here.'});
 $("#modal-2").fireModal({body: 'Modal body text goes here.', center: true});
 
@@ -1038,6 +1051,112 @@ $("#modal-consult-department").fireModal({
   buttons: [
     {
       text: 'Send for Consultation',
+      submit: true,
+      class: 'btn btn-outline-warning btn-shadow',
+      handler: function(modal) {
+        // No additional action needed here
+      }
+    }
+  ]
+});
+
+$("#modal-enter-amount").fireModal({
+  title: 'Enter Payment Amount',
+  body: $("#modal-enter-amount-part"),
+  footerClass: 'bg-whitesmoke',
+  autoFocus: false,
+  created: function(modal) {
+        $(modal).find('.modal-dialog').addClass('modal-lg');
+    },
+  onFormSubmit: function(modal, e, form) {
+    e.preventDefault(); // Prevent the default form submission immediately
+
+    $(e.target).find('.summernote, .summernote-simple').each(function() {
+      try { $(this).val($(this).summernote('code')); } catch(ex) {}
+    });
+    let form_data = $(e.target).serialize();
+
+    $.ajax({
+      type: 'POST',
+      url: '/change/document/status',
+      data: form_data,
+      success: function(response) {
+        if (response.status === 'success') {
+          modal.find('.modal-body').prepend('<div class="alert alert-success">' + response.message + '</div>');
+
+          // Reload the page after a short delay to allow the message to be visible
+          setTimeout(function() {
+            location.reload();
+          }, 2000); // Delay for 2 seconds
+        } else if (response.status === 'error') {
+          modal.find('.modal-body').prepend('<div class="alert alert-danger">' + response.message + '</div>');
+        }
+      },
+      error: function(xhr) {
+        let response = JSON.parse(xhr.responseText);
+        modal.find('.modal-body').prepend('<div class="alert alert-danger">' + response.message + '</div>');
+      },
+      complete: function() {
+        form.stopProgress(); // Stop the loading spinner
+      }
+    });
+  },
+  buttons: [
+    {
+      text: 'Confirm Amount',
+      submit: true,
+      class: 'btn btn-outline-success btn-shadow',
+      handler: function(modal) {
+        // No additional action needed here
+      }
+    }
+  ]
+});
+
+$("#modal-acknowledge-consultation").fireModal({
+  title: 'Acknowledge Consultation',
+  body: $("#modal-acknowledge-consultation-part"),
+  footerClass: 'bg-whitesmoke',
+  autoFocus: false,
+  created: function(modal) {
+        $(modal).find('.modal-dialog').addClass('modal-lg');
+    },
+  onFormSubmit: function(modal, e, form) {
+    e.preventDefault(); // Prevent the default form submission immediately
+
+    $(e.target).find('.summernote, .summernote-simple').each(function() {
+      try { $(this).val($(this).summernote('code')); } catch(ex) {}
+    });
+    let form_data = $(e.target).serialize();
+
+    $.ajax({
+      type: 'POST',
+      url: '/change/document/status',
+      data: form_data,
+      success: function(response) {
+        if (response.status === 'success') {
+          modal.find('.modal-body').prepend('<div class="alert alert-success">' + response.message + '</div>');
+
+          // Reload the page after a short delay to allow the message to be visible
+          setTimeout(function() {
+            location.reload();
+          }, 2000); // Delay for 2 seconds
+        } else if (response.status === 'error') {
+          modal.find('.modal-body').prepend('<div class="alert alert-danger">' + response.message + '</div>');
+        }
+      },
+      error: function(xhr) {
+        let response = JSON.parse(xhr.responseText);
+        modal.find('.modal-body').prepend('<div class="alert alert-danger">' + response.message + '</div>');
+      },
+      complete: function() {
+        form.stopProgress(); // Stop the loading spinner
+      }
+    });
+  },
+  buttons: [
+    {
+      text: 'Acknowledge',
       submit: true,
       class: 'btn btn-outline-warning btn-shadow',
       handler: function(modal) {

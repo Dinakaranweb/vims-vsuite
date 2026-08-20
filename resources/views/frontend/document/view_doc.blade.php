@@ -332,7 +332,9 @@
         <div class="main-content">
             <section class="section">
                 <div class="section-header">
-                    <h1>{!! $doc->subject !!}</h1>
+                    {{-- Subject is sensitive content and gated further below behind
+                         $canViewDocument - this header must not echo it unconditionally. --}}
+                    <h1>{{ $doc->doc_id }}</h1>
                     <div class="section-header-breadcrumb">
                         <div class="breadcrumb-item active"><a href="">Dashboard</a></div>
                         <div class="breadcrumb-item"><a href="">Document</a></div>
@@ -341,8 +343,8 @@
                 </div>
 
                 <div class="section-body">
-                    <h2 class="section-title">{!! $doc->subject !!}</h2>
-                    
+                    <h2 class="section-title">{{ $doc->doc_id }}</h2>
+
                     @php
                         $totalPaid = $pay->sum('paid_amount');
                         $total_tds = $pay->sum('tds_amount');
@@ -397,9 +399,26 @@
                         // Check for PA to Chairman - only if current approver
                         $isPAtoChairman = ($user->department == 'PA to Chairman' && $nextApprover == 'PA to Chairman');
                         $isPAtoGM = ($user->department == 'PA to GM' && $nextApprover == 'PA to GM');
-                        
+
+                        // Check for a department currently in a Consult Department slot - they
+                        // were only asked for remarks, not a real approval decision, so they get
+                        // Acknowledge instead of Approve/Reject/Hold/etc.
+                        $isConsultAcknowledger = !empty($doc->consult_department)
+                            && $user->department == $doc->consult_department
+                            && $nextApprover == $doc->consult_department;
+
                         // Determine if user can view this document
-                        $userPosition = array_search($user->department, $approvalSequence);
+                        // Find where this department currently sits. array_search() alone would
+                        // return the FIRST occurrence, which is wrong once a department appears
+                        // more than once in the sequence (e.g. Medical Director before and after
+                        // a Consult Department round-trip) - prefer the current position when it
+                        // actually matches the department, so a returning approver is evaluated
+                        // against where they are now, not where they started.
+                        if (isset($approvalSequence[$currentIndex]) && $approvalSequence[$currentIndex] === $user->department) {
+                            $userPosition = $currentIndex;
+                        } else {
+                            $userPosition = array_search($user->department, $approvalSequence);
+                        }
                         $canViewDocument = false;
                         $canTakeAction = false;
                         $blockingMessage = null;
@@ -408,12 +427,15 @@
                         if ($doc->by == $user->id) {
                             $canViewDocument = true;
                         }
-                        
-                        // SuperAdmin can always view
-                        if ($user->role == 'SuperAdmin') {
-                            $canViewDocument = true;
-                        }
-                        
+
+                        // Note: SuperAdmin does NOT get blanket visibility here - approvers
+                        // further along the chain (e.g. Medical Director when the flow starts
+                        // at General Manager) must not see a document before it's actually
+                        // reached their department. Sequential confidentiality applies equally
+                        // to SuperAdmin-role approvers; access still comes from being the
+                        // creator, being forwarded the document, having already acted on it, or
+                        // having previous steps in the sequence completed (checked below).
+
                         // Check if user's department is in the approval sequence
                         if ($userPosition !== false) {
                             $previousStepsCompleted = true;
@@ -451,6 +473,21 @@
                                 $canViewDocument = true;
                                 break;
                             }
+                        }
+
+                        // Forwarded documents (via the "Forward to Another Department" action)
+                        // never get added to the tracked approval_sequence - the recipient's
+                        // department wouldn't be found above, incorrectly showing "Access
+                        // Restricted" even though the controller already granted page access for
+                        // exactly this case. document_approval_forwardings is the authoritative
+                        // record of every department a document was ever sent to.
+                        $wasForwardedToMe = DB::table('document_approval_forwardings')
+                            ->where('doc_id', $doc->id)
+                            ->where('forwarded_to', $user->department)
+                            ->exists();
+
+                        if ($wasForwardedToMe) {
+                            $canViewDocument = true;
                         }
                         
                         // Record view
@@ -526,11 +563,11 @@
                         // Determine user's current status
                         $isCreator = ($doc->by == $user->id);
                         $hasApproved = in_array($user->department, $completedApprovers);
-                        $isWaitingForPrevious = (!$canViewDocument && !$isCreator && $user->role != 'SuperAdmin');
+                        $isWaitingForPrevious = (!$canViewDocument && !$isCreator);
                     @endphp
-                    
+
                     <!-- Sequential Approval Flow Info -->
-                    @if(!empty($approvalSequence) && !$isCreator && $user->role != 'SuperAdmin')
+                    @if(!empty($approvalSequence) && !$isCreator)
                         <div class="info-box-info">
                             <i class="fas fa-info-circle"></i> <strong>Sequential Approval Flow</strong><br>
                             This document follows a sequential approval process. Each approver can only view and act on the document after the previous approver has completed their action.
@@ -544,13 +581,15 @@
                                     <span class="status-badge status-completed">You have already approved this document</span>
                                 @elseif($isWaitingForPrevious)
                                     <span class="status-badge status-warning">Waiting for previous approvers</span>
+                                @elseif($wasForwardedToMe)
+                                    <span class="status-badge status-approved">Forwarded to you for review/comment</span>
                                 @endif
                             </div>
                         </div>
                     @endif
                     
                     <!-- Blocking Message for users who cannot view yet -->
-                    @if(!$canViewDocument && !$isCreator && $user->role != 'SuperAdmin' && $doc->status != 'Draft')
+                    @if(!$canViewDocument && !$isCreator && $doc->status != 'Draft')
                         <div class="info-box-warning">
                             <i class="fas fa-lock"></i> <strong>Access Restricted</strong><br>
                             {{ $blockingMessage ?? 'You do not have permission to view this document at this stage of the approval process.' }}
@@ -603,7 +642,7 @@
                     </div>
                     @endif
                     
-                    @if($canViewDocument || $isCreator || $user->role == 'SuperAdmin')
+                    @if($canViewDocument || $isCreator)
                     <div class="row">
                         <div class="col-lg-8 col-md-12">
                             <div class="card">
@@ -844,13 +883,24 @@
                                                             </div>
                                                         @endif
 
+                                                        <!-- Consult Department Acknowledge - the consulted department gets only this,
+                                                             never the full approve/reject palette; acknowledging returns the document
+                                                             to whoever raised the consultation. -->
+                                                        @if($isConsultAcknowledger)
+                                                            <div class="action-btn-group w-100">
+                                                                <a href="#" class="btn btn-outline-warning w-100 mb-2" id="modal-acknowledge-consultation">
+                                                                    <i class="fas fa-reply"></i> Acknowledge Consultation
+                                                                </a>
+                                                            </div>
+                                                        @endif
+
                                                         <!-- Regular Approve Button for other approvers -->
-                                                        @if(($isCurrentApprover && !$isSTBApprover && !$isChairmanApprover && !$isMedicalDirector && !$isGeneralManager && !$isPurchaseHeadSalem && !$isPurchaseHeadChennai && !$isFinanceHead && !$isPAtoChairman && !$isPAtoGM))
+                                                        @if(($isCurrentApprover && !$isSTBApprover && !$isChairmanApprover && !$isMedicalDirector && !$isGeneralManager && !$isPurchaseHeadSalem && !$isPurchaseHeadChennai && !$isFinanceHead && !$isPAtoChairman && !$isPAtoGM && !$isConsultAcknowledger))
                                                             <a href="#" class="btn btn-success w-100 mb-2" id="modal-approve">Approve</a>
                                                         @endif
-                                                        
+
                                                         @php
-                                                            $isTerminalRole = $isSTBApprover || $isPurchaseHeadSalem || $isPurchaseHeadChennai || $isFinanceHead || $isPAtoChairman || $isPAtoGM;
+                                                            $isTerminalRole = $isSTBApprover || $isPurchaseHeadSalem || $isPurchaseHeadChennai || $isFinanceHead || $isPAtoChairman || $isPAtoGM || $isConsultAcknowledger;
                                                         @endphp
 
                                                         @if(!$isTerminalRole)
@@ -863,6 +913,17 @@
 
                                                         <!-- Forward Button -->
                                                         <a href="#" class="btn btn-outline-dark w-100 mb-2" id="modal-forward-doc">Forward to Another Department</a>
+                                                        @endif
+
+                                                        <!-- Enter/Update Payment Amount — for payment-involved documents, available to
+                                                             whoever currently holds the document (a Purchase Officer, etc.), regardless
+                                                             of their specific role, since the amount is often not known at creation
+                                                             time. Not shown to a Consult Department acknowledger - they're only asked
+                                                             for remarks, not to take substantive actions on the document. -->
+                                                        @if($doc->is_payment_involved === 'Y' && !$isConsultAcknowledger)
+                                                            <a href="#" class="btn btn-outline-success w-100 mb-2" id="modal-enter-amount">
+                                                                <i class="fas fa-rupee-sign"></i> {{ $doc->amount ? 'Update' : 'Enter' }} Payment Amount
+                                                            </a>
                                                         @endif
 
                                                         <!-- Comment & Download — always visible to all users in action mode -->
@@ -891,7 +952,11 @@
                                             <div class="card-body">
                                                 @if($doc->status == 'Closed')
                                                     <div class="alert alert-secondary">
-                                                        <i class="fas fa-lock"></i> This document has been <strong>Closed</strong>. You may still add a comment or download a copy.
+                                                        <i class="fas fa-lock"></i> This document has been <strong>Closed</strong>.
+                                                        @if($doc->days_to_close !== null)
+                                                            Took <strong>{{ $doc->days_to_close }} {{ \Illuminate\Support\Str::plural('day', $doc->days_to_close) }}</strong> from approval completion to closure.
+                                                        @endif
+                                                        You may still add a comment or download a copy.
                                                     </div>
                                                 @elseif($doc->status == 'Rejected')
                                                     <div class="alert alert-danger">
@@ -941,7 +1006,35 @@
                                         </div>
                                     </div>
                                 @endif
-                                
+
+                                {{-- Close Document button — the flow's action buttons above only cover
+                                     approving/rejecting/etc.; the creator still needs to formally close a
+                                     Completed document as a separate final step (Close/handleClose() has
+                                     existed for a while but never had a trigger button anywhere). --}}
+                                @if($isCreator && $doc->status === 'Completed')
+                                    <div style="position:sticky; top: 30px; z-index: 2;" class="mt-2">
+                                        <div class="card col-12" style="border: 2px solid #17a2b8;">
+                                            <div class="card-header" style="background: linear-gradient(135deg, #17a2b8, #117a8b); color: white;">
+                                                <h4><i class="fas fa-flag-checkered"></i> Ready to Close</h4>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="alert alert-info">
+                                                    <i class="fas fa-info-circle"></i> This document's approval flow completed
+                                                    @if($doc->completed_at)
+                                                        <strong>{{ $doc->completed_at->diffForHumans() }}</strong> ({{ $doc->days_to_close }} {{ \Illuminate\Support\Str::plural('day', $doc->days_to_close) }} ago)
+                                                    @endif
+                                                    . As the creator, closing it marks it as fully wrapped up.
+                                                </div>
+                                                <div class="buttons">
+                                                    <a href="#" class="btn btn-info w-100 mb-2" id="modal-close">
+                                                        <i class="fas fa-lock"></i> Close Document
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endif
+
                                 @if($process_payment && $user->department == 'Students Welfare')
                                     <div class="col-12 mb-4">
                                         <div class="card shadow" style="border: 2px solid #ff7e5f; border-radius: 10px;">

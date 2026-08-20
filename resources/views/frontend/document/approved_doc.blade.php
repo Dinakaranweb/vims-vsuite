@@ -525,9 +525,10 @@
                             });
                             
                             function handleConfirmYes(docId) {
-                                if(confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
-                                    window.location.href = "{{ url('/delete/document') }}/" + docId;
-                                }
+                                var reason = prompt('Please enter a reason for deleting this document:');
+                                if (reason === null) return;
+                                if (!reason.trim()) { alert('A reason is required to delete a document.'); return; }
+                                window.location.href = "{{ url('/delete/document') }}/" + docId + "?reason=" + encodeURIComponent(reason);
                             }
                         </script>
 

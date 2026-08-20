@@ -21,4 +21,12 @@ yarn-error.log
 
 # Raw staff directory export (real names/phones/emails) - already imported via
 # database/seeders/StaffDirectorySeeder.php, source file should not be committed.
-"Mail ID List For VSuite_29.07.26.xlsx"
+Mail ID List For VSuite_*.xlsx
+~$Mail ID List For VSuite_*.xlsx
+
+# Windows thumbnail cache and stray vendor archive - never intentionally committed.
+Thumbs.db
+/vendor.zip
+
+# Claude Code project settings hold local test credentials - keep out of version control.
+/.claude/
